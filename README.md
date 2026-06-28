@@ -1,13 +1,20 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # x402-XEC
 =======
+=======
+>>>>>>> a84672a (feat(core): scaffold x402-XEC protocol verification)
 # x402-XEC
 
 Security-first protocol primitives for HTTP 402 payments settled in eCash (XEC).
 
-The first core package contains strict invoice and authorization schemas,
-deterministic request binding, local authorization verification with atomic nonce
-consumption, a read-only Chronik interface, and replay-protection test vectors.
+The core package contains strict invoice and authorization schemas, deterministic
+request binding, local authorization verification with atomic nonce consumption,
+a read-only Chronik interface, and replay-protection test vectors.
+
+The local facilitator package adds an Express verification API, mock-only Chronik
+funding lookup, and a transactional in-memory credit ledger. See
+[`packages/x402-xec-facilitator`](packages/x402-xec-facilitator/README.md).
 
 The provisional network identifier is `xec:mainnet`. It is isolated as a constant
 so a future standards-based identifier can replace it.
@@ -28,4 +35,7 @@ npm run build
 There is no production Chronik client or configured mainnet endpoint. The code
 cannot construct or broadcast transactions, hold keys, or custody funds. Tonalli
 Wallet, RMZ, Teyolia, and facilitator wallet behavior are not included.
+<<<<<<< HEAD
+>>>>>>> a84672a (feat(core): scaffold x402-XEC protocol verification)
+=======
 >>>>>>> a84672a (feat(core): scaffold x402-XEC protocol verification)

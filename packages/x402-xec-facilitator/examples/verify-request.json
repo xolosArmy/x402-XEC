@@ -1,0 +1,34 @@
+{
+  "invoice": {
+    "x402Version": 1,
+    "scheme": "exact",
+    "network": "xec:mainnet",
+    "resourceHash": "3c41bff8365911b4ed410b9b40ad179600f3ce925a9120cccb63440390c1eb39",
+    "amountSats": "1000",
+    "payTo": "ecash:qaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "nonce": "MDEyMzQ1Njc4OWFiY2RlZg",
+    "issuedAt": 1800000000,
+    "expiresAt": 1800000060
+  },
+  "authorization": {
+    "x402Version": 1,
+    "scheme": "exact",
+    "network": "xec:mainnet",
+    "invoiceHash": "dac9b7e7b0f460d4d581189a6a96a2ce3cea2050427313e1f3823490a50cbe26",
+    "resourceHash": "3c41bff8365911b4ed410b9b40ad179600f3ce925a9120cccb63440390c1eb39",
+    "amountSats": "1000",
+    "payTo": "ecash:qaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "nonce": "MDEyMzQ1Njc4OWFiY2RlZg",
+    "payer": "ecash:qbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "transaction": { "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "vout": 0 },
+    "signature": "d7651f9e5eeffafbe3e77a5a80d4dfc2aa0a4f93b3e5501579254bc0623a91e0"
+  },
+  "resource": {
+    "serverOrigin": "https://api.example.com",
+    "method": "POST",
+    "path": "/v1/weather",
+    "query": [["city", "mexico-city"]],
+    "body": { "forecastDays": 3 }
+  },
+  "idempotencyKey": "weather-001"
+}
