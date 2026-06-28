@@ -1,6 +1,9 @@
 <<<<<<< HEAD
+<<<<<<< HEAD
 # x402-XEC
 =======
+=======
+>>>>>>> a84672a (feat(core): scaffold x402-XEC protocol verification)
 # x402-XEC
 
 Security-first protocol primitives for HTTP 402 payments settled in eCash (XEC).
@@ -28,4 +31,7 @@ npm run build
 There is no production Chronik client or configured mainnet endpoint. The code
 cannot construct or broadcast transactions, hold keys, or custody funds. Tonalli
 Wallet, RMZ, Teyolia, and facilitator wallet behavior are not included.
+<<<<<<< HEAD
+>>>>>>> a84672a (feat(core): scaffold x402-XEC protocol verification)
+=======
 >>>>>>> a84672a (feat(core): scaffold x402-XEC protocol verification)
