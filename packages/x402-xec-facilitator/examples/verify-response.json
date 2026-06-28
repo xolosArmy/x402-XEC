@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "status": "VERIFIED",
+  "invoiceId": "dac9b7e7b0f460d4d581189a6a96a2ce3cea2050427313e1f3823490a50cbe26",
+  "authorizationDigest": "04ac942100d3464ca4d723c9838e4aad0347c319465b29ff86429b2f21d154c9",
+  "debitedSats": "1000",
+  "remainingBalanceSats": "9000",
+  "fundingOutpoint": { "txid": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc", "outIdx": 0 }
+}
