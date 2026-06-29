@@ -18,6 +18,10 @@ The [`examples/local-e2e`](examples/local-e2e/README.md) demo connects the
 facilitator, Express middleware, and Axios interceptor in one deterministic local
 flow.
 
+The [`@x402-xec/transactions`](packages/x402-xec-transactions/README.md) package
+constructs signed XEC funding transactions offline from caller-provided UTXOs and
+signatories. It has no network or broadcast capability and holds no keys.
+
 The provisional network identifier is `xec:mainnet`. It is isolated as a constant
 so a future standards-based identifier can replace it.
 
@@ -37,7 +41,8 @@ pnpm build
 `EcashMessageSignatureVerifier` and `RealChronikTxProvider` are opt-in. Neither
 is selected by the local server or demo, and the real Chronik provider has no
 default endpoint. Local E2E uses `TestOnlyMockSignatureVerifier`; mock signatures
-are never wallet signatures. The code cannot construct, sign, or broadcast
-transactions, hold keys, custody funds, or perform a real payment flow. Tonalli
-Wallet comes later as signer UX; RMZ, Teyolia, and facilitator wallet behavior
-are not included.
+are never wallet signatures. The transactions package can construct and sign a
+raw transaction through caller-owned callbacks, but no package can broadcast,
+hold keys, custody funds, or perform an automatic payment flow. The builder is
+not safe for mainnet use yet. Tonalli Wallet comes later as signer UX; RMZ,
+Teyolia, and facilitator wallet behavior are not included.
