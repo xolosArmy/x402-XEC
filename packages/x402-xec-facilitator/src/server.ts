@@ -41,35 +41,77 @@ function parseFixtures(json: string): ChronikTransaction[] {
     if (!isFixture(candidate)) throw new Error("Invalid MOCK_CHRONIK_FIXTURES entry");
     return {
       txid: candidate.txid,
-      blockHeight: candidate.blockHeight,
-      isCoinbase: candidate.isCoinbase,
       outputs: candidate.outputs.map((output) => ({
-        outputIndex: output.outputIndex,
-        valueSats: BigInt(output.valueSats),
-        lockingScriptHex: output.lockingScriptHex,
+        sats: BigInt(output.sats),
+        outputScript: output.outputScript,
+        ...(output.token === undefined ? {} : {
+          token: {
+            tokenId: output.token.tokenId,
+            atoms: BigInt(output.token.atoms),
+            isMintBaton: output.token.isMintBaton,
+          },
+        }),
       })),
+      ...(candidate.block === undefined ? {} : { block: candidate.block }),
+      isFinal: candidate.isFinal,
     };
   });
 }
 
+interface FixtureToken {
+  tokenId: string;
+  atoms: string;
+  isMintBaton: boolean;
+}
+
+interface FixtureOutput {
+  sats: string;
+  outputScript: string;
+  token?: FixtureToken;
+}
+
 interface Fixture {
   txid: string;
-  blockHeight: number | null;
-  isCoinbase: boolean;
-  outputs: Array<{ outputIndex: number; valueSats: string; lockingScriptHex: string }>;
+  outputs: FixtureOutput[];
+  block?: { height: number; hash: string; timestamp: number };
+  isFinal: boolean;
 }
 
 function isFixture(value: unknown): value is Fixture {
   if (!value || typeof value !== "object") return false;
   const candidate = value as Partial<Fixture>;
   return typeof candidate.txid === "string"
-    && (candidate.blockHeight === null || Number.isSafeInteger(candidate.blockHeight))
-    && typeof candidate.isCoinbase === "boolean"
     && Array.isArray(candidate.outputs)
-    && candidate.outputs.every((output) => (
-      Number.isSafeInteger(output.outputIndex)
-      && typeof output.valueSats === "string"
-      && /^[1-9][0-9]*$/.test(output.valueSats)
-      && typeof output.lockingScriptHex === "string"
-    ));
+    && candidate.outputs.every(isFixtureOutput)
+    && (candidate.block === undefined || isFixtureBlock(candidate.block))
+    && typeof candidate.isFinal === "boolean";
+}
+
+function isFixtureOutput(output: unknown): output is FixtureOutput {
+  if (!output || typeof output !== "object") return false;
+  const candidate = output as Partial<FixtureOutput>;
+  return typeof candidate.sats === "string"
+    && /^[1-9][0-9]*$/.test(candidate.sats)
+    && typeof candidate.outputScript === "string"
+    && /^[0-9a-f]*$/.test(candidate.outputScript)
+    && (candidate.token === undefined || isFixtureToken(candidate.token));
+}
+
+function isFixtureToken(token: unknown): token is FixtureToken {
+  if (!token || typeof token !== "object") return false;
+  const candidate = token as Partial<FixtureToken>;
+  return typeof candidate.tokenId === "string"
+    && /^[0-9a-f]{64}$/.test(candidate.tokenId)
+    && typeof candidate.atoms === "string"
+    && /^[1-9][0-9]*$/.test(candidate.atoms)
+    && typeof candidate.isMintBaton === "boolean";
+}
+
+function isFixtureBlock(block: unknown): block is NonNullable<Fixture["block"]> {
+  if (!block || typeof block !== "object") return false;
+  const candidate = block as Partial<NonNullable<Fixture["block"]>>;
+  return Number.isSafeInteger(candidate.height)
+    && typeof candidate.hash === "string"
+    && /^[0-9a-f]{64}$/.test(candidate.hash)
+    && Number.isSafeInteger(candidate.timestamp);
 }

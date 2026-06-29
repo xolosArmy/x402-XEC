@@ -35,9 +35,9 @@ function makeFacilitator(fundingValueSats = 2_000n): Facilitator {
   return new Facilitator({
     chronik: new MockChronik([{
       txid: TXID,
-      blockHeight: 800_000,
-      isCoinbase: false,
-      outputs: [{ outputIndex: 0, valueSats: fundingValueSats, lockingScriptHex: "51" }],
+      block: { height: 800_000, hash: "d".repeat(64), timestamp: NOW - 100 },
+      isFinal: true,
+      outputs: [{ sats: fundingValueSats, outputScript: "51" }],
     }]),
     signatureVerifier: new MockSignatureVerifier(),
     now: () => NOW,
