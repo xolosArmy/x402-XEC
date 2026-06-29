@@ -13,7 +13,7 @@ import {
 } from "@x402-xec/core";
 import {
   Facilitator,
-  MockChronik,
+  FixtureChronikTxProvider,
   MockSignatureVerifier,
   createMockSignature,
   type VerifyRequest,
@@ -33,7 +33,7 @@ const resource: ResourceRequest = {
 
 function makeFacilitator(fundingValueSats = 2_000n): Facilitator {
   return new Facilitator({
-    chronik: new MockChronik([{
+    txProvider: new FixtureChronikTxProvider([{
       txid: TXID,
       block: { height: 800_000, hash: "d".repeat(64), timestamp: NOW - 100 },
       isFinal: true,
@@ -232,4 +232,20 @@ test("core verification rejects resource, payTo, amount, and expiry mismatches",
     const result = await makeFacilitator().verify(input);
     assert.deepEqual(result.body, { ok: false, code }, name);
   }
+});
+
+test("missing provider transaction rejects without a ledger debit", async () => {
+  const facilitator = new Facilitator({
+    txProvider: new FixtureChronikTxProvider(),
+    signatureVerifier: new MockSignatureVerifier(),
+    now: () => NOW,
+  });
+
+  const result = await facilitator.verify(request());
+
+  assert.deepEqual(result, {
+    status: 402,
+    body: { ok: false, code: "FUNDING_NOT_FOUND" },
+  });
+  assert.equal(facilitator.ledger.entries().length, 0);
 });

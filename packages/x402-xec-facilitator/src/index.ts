@@ -5,3 +5,4 @@ export * from "./ledger.js";
 export * from "./mock-chronik.js";
 export * from "./mock-signature.js";
 export * from "./schemas.js";
+export * from "./tx-provider.js";

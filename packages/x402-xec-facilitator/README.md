@@ -1,7 +1,7 @@
 # `@x402-xec/facilitator`
 
 Local-only Express service for verifying x402-XEC authorizations against
-`@x402-xec/core`, a `MockChronik`, and an in-memory transactional ledger.
+`@x402-xec/core`, a `FixtureChronikTxProvider`, and an in-memory transactional ledger.
 
 It exposes:
 
@@ -56,16 +56,18 @@ initial and remaining funding values, debit, invoice ID, nonce, authorization
 digest, and idempotency key. Amounts remain `bigint` internally and serialize as
 canonical decimal strings.
 
-## Offline Chronik inspection bridge
+## Transaction provider boundary
 
-The package exports deterministic Chronik-shaped funding fixtures used with
-`inspectFundingTransaction` from core. The helper verifies txid, output index,
-payee script, sats, token absence, and confirmation or Avalanche finality. See
-[`docs/chronik-fixture-inspection.md`](../../docs/chronik-fixture-inspection.md)
-for the fixture matrix and integration boundary.
+`Facilitator` depends on the read-only `TxProvider` interface.
+`FixtureChronikTxProvider` supplies deterministic Chronik-shaped transactions
+from an in-memory map and rejects unknown txids with `TxNotFoundError`. Funding
+verification runs through `inspectFundingTransaction` before a ledger debit.
+See [`docs/chronik-fixture-inspection.md`](../../docs/chronik-fixture-inspection.md)
+for the provider contract, fixture behavior, and deferred real integration.
 
 ## Scope boundary
 
-`MockChronik` is an injected in-memory map. This package has no real Chronik URL
+`FixtureChronikTxProvider` is an injected in-memory map. Real Chronik mainnet
+and testnet integration is intentionally deferred; this package has no endpoint
 or network client, transaction broadcast path, wallet keys, or custody. It does
 not integrate Tonalli Wallet, RMZ, or Teyolia.

@@ -30,5 +30,6 @@ compare-and-set. The in-memory implementation is single-process only. Expiry is
 Invoices are also rejected when `now < issuedAt`.
 exclusive: `now >= expiresAt` is expired.
 
-`ChronikClient` is only a read-only boundary for future settlement verification.
-It has no implementation, endpoint, or broadcast method.
+`TxProvider` is the read-only transaction boundary used by funding inspection.
+Missing transactions reject with `TxNotFoundError`. Core configures no endpoint
+and exposes no broadcast method; real Chronik integration is deferred.

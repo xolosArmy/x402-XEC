@@ -4,13 +4,13 @@ Security-first protocol primitives for HTTP 402 payments settled in eCash (XEC).
 
 The core package contains strict invoice and authorization schemas, deterministic
 request binding, local authorization verification with atomic nonce consumption,
-a read-only Chronik interface, and replay-protection test vectors.
+a read-only transaction provider interface, and replay-protection test vectors.
 
 The local facilitator package adds an Express verification API, mock-only Chronik
 funding lookup, and a transactional in-memory credit ledger. See
 [`packages/x402-xec-facilitator`](packages/x402-xec-facilitator/README.md).
 
-Offline Chronik-shaped transaction inspection fixtures and their scope are
+Deterministic Chronik transaction-provider fixtures and their scope are
 documented in [`docs/chronik-fixture-inspection.md`](docs/chronik-fixture-inspection.md).
 
 The [`examples/local-e2e`](examples/local-e2e/README.md) demo connects the
@@ -33,6 +33,7 @@ pnpm build
 
 ## Scope boundary
 
-There is no production Chronik client or configured mainnet endpoint. The code
+There is no real Chronik provider or configured mainnet/testnet endpoint. The
+provider boundary prepares that future integration without enabling it. The code
 cannot construct or broadcast transactions, hold keys, or custody funds. Tonalli
 Wallet, RMZ, Teyolia, and facilitator wallet behavior are not included.

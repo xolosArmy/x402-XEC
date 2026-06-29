@@ -6,7 +6,7 @@ import {
   confirmedTransactionFixture,
   insufficientSatsFixture,
   missingTransactionFixture,
-  MockChronik,
+  FixtureChronikTxProvider,
   tokenOutputFixture,
   unfinalizedTransactionFixture,
   validFundingFixture,
@@ -17,7 +17,7 @@ import {
 
 async function inspect(fixture: ChronikInspectionFixture) {
   return inspectFundingTransaction({
-    chronik: new MockChronik(fixture.transactions),
+    txProvider: new FixtureChronikTxProvider(fixture.transactions),
     fundingOutpoint: fixture.fundingOutpoint,
     outputScript: fixture.outputScript,
     amountSats: fixture.amountSats,

@@ -3,10 +3,11 @@ import {
   canonicalHash,
   computeInvoiceHash,
   computeResourceHash,
+  inspectFundingTransaction,
   parseAmountSats,
   verifyAuthorization,
   type AuthorizationSignatureVerifier,
-  type ChronikClient,
+  type TxProvider,
   type VerificationFailureCode,
 } from "@x402-xec/core";
 import {
@@ -46,7 +47,7 @@ export interface FacilitatorResult {
 }
 
 export interface FacilitatorOptions {
-  readonly chronik: ChronikClient;
+  readonly txProvider: TxProvider;
   readonly signatureVerifier: AuthorizationSignatureVerifier;
   readonly ledger?: InMemoryTransactionalLedger;
   readonly now?: () => number;
@@ -54,12 +55,12 @@ export interface FacilitatorOptions {
 
 export class Facilitator {
   readonly ledger: InMemoryTransactionalLedger;
-  readonly #chronik: ChronikClient;
+  readonly #txProvider: TxProvider;
   readonly #signatureVerifier: AuthorizationSignatureVerifier;
   readonly #now: () => number;
 
   constructor(options: FacilitatorOptions) {
-    this.#chronik = options.chronik;
+    this.#txProvider = options.txProvider;
     this.#signatureVerifier = options.signatureVerifier;
     this.ledger = options.ledger ?? new InMemoryTransactionalLedger();
     this.#now = options.now ?? (() => Math.floor(Date.now() / 1_000));
@@ -111,9 +112,18 @@ export class Facilitator {
     transaction: Parameters<Parameters<InMemoryTransactionalLedger["transact"]>[0]>[0],
   ): Promise<FacilitatorResult> {
     const { txid, vout } = input.authorization.transaction;
-    const chronikTransaction = await this.#chronik.getTransaction(txid);
-    const output = chronikTransaction?.outputs[vout];
-    if (!output) return failure("FUNDING_NOT_FOUND", 402);
+    const amount = parseAmountSats(input.invoice.amountSats);
+    const inspection = await inspectFundingTransaction({
+      txProvider: this.#txProvider,
+      fundingOutpoint: { txid, outIdx: vout },
+      amountSats: amount,
+    });
+    if (!inspection.ok) {
+      return inspection.code === "INSUFFICIENT_SATS"
+        ? failure("INSUFFICIENT_CREDIT", 402)
+        : failure("FUNDING_NOT_FOUND", 402);
+    }
+    const { output } = inspection;
 
     const existing = transaction.getFundingAccount(txid, vout);
     if (existing && existing.fundingValueSats !== output.sats) {
@@ -123,7 +133,6 @@ export class Facilitator {
       return failure("PAYER_MISMATCH", 403);
     }
 
-    const amount = parseAmountSats(input.invoice.amountSats);
     const account: FundingAccount = existing
       ? { ...existing, fundingOutpoint: { ...existing.fundingOutpoint } }
       : {

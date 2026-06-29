@@ -1,36 +1,46 @@
-# Offline Chronik transaction inspection
+# Chronik transaction provider and offline inspection
 
-This change is a bridge between the original in-memory funding lookup and future
-verification against a real Chronik service. It defines the read-only subset of
-a Chronik transaction that payment verification needs and exercises that model
-with deterministic local fixtures.
+This layer separates funding verification from transaction retrieval. Core
+exports the read-only `TxProvider` contract (and its Chronik-specific marker,
+`ChronikTxProvider`):
 
-`inspectFundingTransaction` receives an injected `ChronikClient`, a funding
-outpoint, the expected payee output script, and the required XEC amount in sats.
-It verifies all of the following:
+```ts
+interface TxProvider {
+  getTx(txid: string): Promise<ChronikTransaction>;
+}
+```
 
-- the transaction returned by the client matches `fundingOutpoint.txid`;
-- `fundingOutpoint.outIdx` selects an existing output;
-- the selected `outputScript` is the expected payee script;
-- the output has at least the required `sats`;
-- the output has no token data; and
-- the transaction is confirmed (`block` exists) or Avalanche-final
-  (`isFinal === true`).
+A provider returns the existing Chronik-shaped transaction model. A missing
+transaction rejects with `TxNotFoundError`, which includes the stable
+`TX_NOT_FOUND` code and requested txid. The interface has no endpoint,
+broadcast, wallet, or mutation methods.
 
-The facilitator package exports fixtures for valid funding, a missing
-transaction, a wrong output index, a wrong payee script, insufficient sats, a
-token-bearing output, a non-final transaction, a confirmed transaction, and an
-Avalanche-final transaction. Txids, scripts, block metadata, token metadata,
-and amounts are fixed values with no external dependencies.
+## Deterministic fixture provider
 
-## Scope boundary
+`FixtureChronikTxProvider` implements `ChronikTxProvider` with an in-memory map.
+Its constructor accepts the deterministic transactions exported by the
+facilitator fixture module. It performs no network calls and is used by the
+facilitator tests, local server, and `examples/local-e2e`.
 
-The fixture client remains an in-memory map. Nothing in this layer configures or
-calls a Chronik endpoint, constructs or broadcasts a transaction, holds wallet
-keys, or takes custody of funds. It does not depend on `ecash-lib` and does not
-integrate Tonalli Wallet, RMZ, or Teyolia.
+The facilitator receives a `TxProvider` through `FacilitatorOptions` and passes
+it to `inspectFundingTransaction`. Inspection verifies the txid, output index,
+required sats, token absence, and confirmation or Avalanche finality before a
+ledger debit. The fixture tests can additionally provide an expected locking
+script to verify the payee output script.
 
-The helper deliberately accepts the expected output script. Converting the
-invoice's eCash `payTo` address to a locking script and wiring the helper into a
-production Chronik adapter are later integration steps. Keeping that boundary
-explicit avoids introducing an incomplete address codec in this offline bridge.
+The facilitator does not yet convert an invoice's eCash `payTo` address into a
+locking script, so its provider-backed inspection intentionally omits that
+comparison. Address decoding belongs with the future real Chronik integration;
+this PR does not introduce a partial codec.
+
+## Deferred real Chronik integration
+
+A `RealChronikTxProvider` is intentionally not included. This PR prepares the
+provider boundary needed for future mainnet or testnet integration but does not
+enable either network. A future implementation must be explicitly configured;
+there is no default endpoint or implicit fallback to a real service.
+
+Nothing in this layer performs network I/O, constructs or broadcasts a
+transaction, holds keys, or takes custody of funds. It does not integrate an
+`ecash-lib` wallet, Tonalli Wallet, RMZ, or Teyolia. All current behavior is
+deterministic and process-local.
