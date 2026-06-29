@@ -18,6 +18,7 @@ export const DEMO_VOUT = 0;
 export interface StartedFacilitator {
   readonly facilitator: Facilitator;
   readonly ledger: InMemoryTransactionalLedger;
+  readonly txProvider: FixtureChronikTxProvider;
   readonly origin: string;
   close(): Promise<void>;
 }
@@ -52,6 +53,7 @@ export async function startFacilitator(
   return {
     facilitator,
     ledger,
+    txProvider,
     origin: `http://127.0.0.1:${port}`,
     close: () => close(server),
   };

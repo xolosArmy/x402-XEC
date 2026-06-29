@@ -4,5 +4,6 @@ export * from "./facilitator.js";
 export * from "./ledger.js";
 export * from "./mock-chronik.js";
 export * from "./mock-signature.js";
+export * from "./real-chronik-tx-provider.js";
 export * from "./schemas.js";
 export * from "./tx-provider.js";

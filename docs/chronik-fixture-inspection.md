@@ -33,14 +33,30 @@ locking script, so its provider-backed inspection intentionally omits that
 comparison. Address decoding belongs with the future real Chronik integration;
 this PR does not introduce a partial codec.
 
-## Deferred real Chronik integration
+## Disabled-by-default real Chronik provider
 
-A `RealChronikTxProvider` is intentionally not included. This PR prepares the
-provider boundary needed for future mainnet or testnet integration but does not
-enable either network. A future implementation must be explicitly configured;
-there is no default endpoint or implicit fallback to a real service.
+`RealChronikTxProvider` is available as a read-only adapter for future
+integration. It has no default endpoint and can only be created with an explicit
+Chronik HTTP(S) endpoint:
 
-Nothing in this layer performs network I/O, constructs or broadcasts a
-transaction, holds keys, or takes custody of funds. It does not integrate an
-`ecash-lib` wallet, Tonalli Wallet, RMZ, or Teyolia. All current behavior is
-deterministic and process-local.
+```ts
+const txProvider = new RealChronikTxProvider({
+  endpoint: "https://your-chronik.example",
+});
+```
+
+Constructing the provider does not connect to Chronik. Calling `getTx` retrieves
+one transaction through the official `chronik-client` package and maps its txid,
+outputs, token data, block metadata, and finality into the core model. A Chronik
+404 becomes `TxNotFoundError`; other connection and service failures remain
+visible to the caller.
+
+The local server and `examples/local-e2e` continue to construct
+`FixtureChronikTxProvider`. Automated tests use fixtures or an injected mocked
+Chronik reader. They do not read a Chronik endpoint from the environment and make
+no public Chronik calls. Enabling the real provider requires an application-level
+code/configuration change.
+
+Neither provider constructs or broadcasts a transaction, holds keys, takes
+custody of funds, or implements a real payment flow. This layer does not
+integrate an `ecash-lib` wallet, Tonalli Wallet, RMZ, or Teyolia.

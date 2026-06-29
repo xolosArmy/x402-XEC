@@ -6,8 +6,9 @@ The core package contains strict invoice and authorization schemas, deterministi
 request binding, local authorization verification with atomic nonce consumption,
 a read-only transaction provider interface, and replay-protection test vectors.
 
-The local facilitator package adds an Express verification API, mock-only Chronik
-funding lookup, and a transactional in-memory credit ledger. See
+The local facilitator package adds an Express verification API, fixture-backed
+Chronik funding lookup, an opt-in read-only real Chronik adapter, and a
+transactional in-memory credit ledger. See
 [`packages/x402-xec-facilitator`](packages/x402-xec-facilitator/README.md).
 
 Deterministic Chronik transaction-provider fixtures and their scope are
@@ -33,7 +34,8 @@ pnpm build
 
 ## Scope boundary
 
-There is no real Chronik provider or configured mainnet/testnet endpoint. The
-provider boundary prepares that future integration without enabling it. The code
-cannot construct or broadcast transactions, hold keys, or custody funds. Tonalli
+`RealChronikTxProvider` is available for future integration but has no default
+endpoint and is not used by the server, tests, or local demo. Enabling it requires
+explicit application configuration. The code cannot construct or broadcast
+transactions, hold keys, custody funds, or perform a real payment flow. Tonalli
 Wallet, RMZ, Teyolia, and facilitator wallet behavior are not included.

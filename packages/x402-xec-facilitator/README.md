@@ -1,7 +1,8 @@
 # `@x402-xec/facilitator`
 
-Local-only Express service for verifying x402-XEC authorizations against
-`@x402-xec/core`, a `FixtureChronikTxProvider`, and an in-memory transactional ledger.
+Express service for verifying x402-XEC authorizations against `@x402-xec/core`,
+a transaction provider, and an in-memory transactional ledger. All included
+server and demo entry points use `FixtureChronikTxProvider`.
 
 It exposes:
 
@@ -62,12 +63,16 @@ canonical decimal strings.
 `FixtureChronikTxProvider` supplies deterministic Chronik-shaped transactions
 from an in-memory map and rejects unknown txids with `TxNotFoundError`. Funding
 verification runs through `inspectFundingTransaction` before a ledger debit.
+
+`RealChronikTxProvider` is available for future read-only integration through an
+explicit `{ endpoint }` constructor configuration. It is disabled by default:
+the package has no default endpoint, no environment-variable switch, and no
+implicit fallback from fixtures to a network service.
 See [`docs/chronik-fixture-inspection.md`](../../docs/chronik-fixture-inspection.md)
-for the provider contract, fixture behavior, and deferred real integration.
+for the provider contract and configuration boundary.
 
 ## Scope boundary
 
-`FixtureChronikTxProvider` is an injected in-memory map. Real Chronik mainnet
-and testnet integration is intentionally deferred; this package has no endpoint
-or network client, transaction broadcast path, wallet keys, or custody. It does
-not integrate Tonalli Wallet, RMZ, or Teyolia.
+The real provider only reads transactions. This package has no transaction
+broadcast path, wallet keys, custody, or real payment flow. It does not integrate
+Tonalli Wallet, RMZ, or Teyolia.

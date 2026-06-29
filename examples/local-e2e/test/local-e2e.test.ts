@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { XecSigner } from "@x402-xec/axios";
+import { FixtureChronikTxProvider } from "@x402-xec/facilitator";
 import axios from "axios";
 import { DEMO_PAYER, DEMO_TXID, DEMO_VOUT } from "../src/facilitator.js";
 import { startLocalE2e } from "../src/index.js";
@@ -8,6 +9,8 @@ import { startLocalE2e } from "../src/index.js";
 test("local e2e returns 200 with interceptor", async (t) => {
   const demo = await startLocalE2e();
   t.after(() => demo.close());
+
+  assert.ok(demo.facilitator.txProvider instanceof FixtureChronikTxProvider);
 
   const response = await demo.createClient().get(demo.url);
 
