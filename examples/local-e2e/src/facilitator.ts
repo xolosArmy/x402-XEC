@@ -1,8 +1,8 @@
 import type { AuthorizationSignatureVerifier } from "@x402-xec/core";
 import {
   Facilitator,
+  FixtureChronikTxProvider,
   InMemoryTransactionalLedger,
-  MockChronik,
   MockSignatureVerifier,
   createApp,
 } from "@x402-xec/facilitator";
@@ -30,7 +30,7 @@ export async function startFacilitator(
   options: StartFacilitatorOptions = {},
 ): Promise<StartedFacilitator> {
   const ledger = new InMemoryTransactionalLedger();
-  const chronik = new MockChronik([{
+  const txProvider = new FixtureChronikTxProvider([{
     txid: DEMO_TXID,
     outputs: [{
       sats: 10_000n,
@@ -40,7 +40,7 @@ export async function startFacilitator(
     isFinal: true,
   }]);
   const facilitator = new Facilitator({
-    chronik,
+    txProvider,
     ledger,
     signatureVerifier: options.signatureVerifier ?? new MockSignatureVerifier(),
     now: () => DEMO_NOW,

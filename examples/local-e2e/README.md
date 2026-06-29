@@ -2,7 +2,7 @@
 
 This example runs the complete x402-XEC HTTP flow in one local process:
 
-1. A local facilitator starts with `MockChronik` and an in-memory transactional ledger.
+1. A local facilitator starts with `FixtureChronikTxProvider` and an in-memory transactional ledger.
 2. An Express API protects `GET /weather` for 1,000 sats.
 3. An Axios client requests the resource and receives HTTP 402.
 4. The interceptor validates the invoice and resource, then uses a test-only mock signer.

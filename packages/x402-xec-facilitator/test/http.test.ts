@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import type { AddressInfo } from "node:net";
 import test from "node:test";
-import { Facilitator, MockChronik, MockSignatureVerifier, createApp } from "../src/index.js";
+import { Facilitator, FixtureChronikTxProvider, MockSignatureVerifier, createApp } from "../src/index.js";
 
 test("health and supported endpoints describe a local-only service", async (t) => {
   const app = createApp(new Facilitator({
-    chronik: new MockChronik(),
+    txProvider: new FixtureChronikTxProvider(),
     signatureVerifier: new MockSignatureVerifier(),
   }));
   const server = app.listen(0, "127.0.0.1");
@@ -29,7 +29,7 @@ test("health and supported endpoints describe a local-only service", async (t) =
 
 test("verify endpoint rejects malformed input as JSON", async (t) => {
   const app = createApp(new Facilitator({
-    chronik: new MockChronik(),
+    txProvider: new FixtureChronikTxProvider(),
     signatureVerifier: new MockSignatureVerifier(),
   }));
   const server = app.listen(0, "127.0.0.1");
