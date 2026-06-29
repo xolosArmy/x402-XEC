@@ -1,0 +1,23 @@
+{
+  "name": "local-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Deterministic local end-to-end x402-XEC demo",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@x402-xec/axios": "workspace:*",
+    "@x402-xec/core": "workspace:*",
+    "@x402-xec/express": "workspace:*",
+    "@x402-xec/facilitator": "workspace:*",
+    "axios": "^1.7.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": { "@types/express": "^5.0.3" }
+}
