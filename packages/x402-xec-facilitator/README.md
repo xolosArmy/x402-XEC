@@ -16,7 +16,7 @@ From the repository root:
 ```sh
 npm install
 export FACILITATOR_NOW=1800000010
-export MOCK_CHRONIK_FIXTURES='[{"txid":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","blockHeight":800000,"isCoinbase":false,"outputs":[{"outputIndex":0,"valueSats":"10000","lockingScriptHex":"51"}]}]'
+export MOCK_CHRONIK_FIXTURES='[{"txid":"cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc","outputs":[{"sats":"10000","outputScript":"51"}],"block":{"height":800000,"hash":"dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd","timestamp":1799999900},"isFinal":true}]'
 npm start --workspace @x402-xec/facilitator
 ```
 
@@ -55,6 +55,14 @@ Ledger entries retain the funding outpoint (`txid` + `outIdx`), payer, payee,
 initial and remaining funding values, debit, invoice ID, nonce, authorization
 digest, and idempotency key. Amounts remain `bigint` internally and serialize as
 canonical decimal strings.
+
+## Offline Chronik inspection bridge
+
+The package exports deterministic Chronik-shaped funding fixtures used with
+`inspectFundingTransaction` from core. The helper verifies txid, output index,
+payee script, sats, token absence, and confirmation or Avalanche finality. See
+[`docs/chronik-fixture-inspection.md`](../../docs/chronik-fixture-inspection.md)
+for the fixture matrix and integration boundary.
 
 ## Scope boundary
 

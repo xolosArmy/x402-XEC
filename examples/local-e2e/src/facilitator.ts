@@ -33,12 +33,11 @@ export async function startFacilitator(
   const chronik = new MockChronik([{
     txid: DEMO_TXID,
     outputs: [{
-      outputIndex: DEMO_VOUT,
-      valueSats: 10_000n,
-      lockingScriptHex: "51",
+      sats: 10_000n,
+      outputScript: "51",
     }],
-    blockHeight: 800_000,
-    isCoinbase: false,
+    block: { height: 800_000, hash: "d".repeat(64), timestamp: DEMO_NOW - 100 },
+    isFinal: true,
   }]);
   const facilitator = new Facilitator({
     chronik,

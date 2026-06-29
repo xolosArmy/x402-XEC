@@ -112,11 +112,11 @@ export class Facilitator {
   ): Promise<FacilitatorResult> {
     const { txid, vout } = input.authorization.transaction;
     const chronikTransaction = await this.#chronik.getTransaction(txid);
-    const output = chronikTransaction?.outputs.find((candidate) => candidate.outputIndex === vout);
+    const output = chronikTransaction?.outputs[vout];
     if (!output) return failure("FUNDING_NOT_FOUND", 402);
 
     const existing = transaction.getFundingAccount(txid, vout);
-    if (existing && existing.fundingValueSats !== output.valueSats) {
+    if (existing && existing.fundingValueSats !== output.sats) {
       return failure("FUNDING_CHANGED", 409);
     }
     if (existing && existing.payer !== input.authorization.payer) {
@@ -129,8 +129,8 @@ export class Facilitator {
       : {
         fundingOutpoint: { txid, outIdx: vout },
         payer: input.authorization.payer,
-        fundingValueSats: output.valueSats,
-        remainingBalanceSats: output.valueSats,
+        fundingValueSats: output.sats,
+        remainingBalanceSats: output.sats,
       };
     if (account.remainingBalanceSats < amount) return failure("INSUFFICIENT_CREDIT", 402);
 

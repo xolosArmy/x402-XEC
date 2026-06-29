@@ -10,6 +10,9 @@ The local facilitator package adds an Express verification API, mock-only Chroni
 funding lookup, and a transactional in-memory credit ledger. See
 [`packages/x402-xec-facilitator`](packages/x402-xec-facilitator/README.md).
 
+Offline Chronik-shaped transaction inspection fixtures and their scope are
+documented in [`docs/chronik-fixture-inspection.md`](docs/chronik-fixture-inspection.md).
+
 The [`examples/local-e2e`](examples/local-e2e/README.md) demo connects the
 facilitator, Express middleware, and Axios interceptor in one deterministic local
 flow.
