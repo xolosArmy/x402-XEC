@@ -1,0 +1,28 @@
+{
+  "name": "@x402-xec/transactions",
+  "version": "0.1.0",
+  "description": "Offline XEC funding transaction construction for x402-XEC",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "files": ["dist", "README.md"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@x402-xec/core": "0.1.0",
+    "ecash-lib": "^4.12.0"
+  }
+}

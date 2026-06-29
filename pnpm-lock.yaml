@@ -94,6 +94,15 @@ importers:
         specifier: ^5.0.3
         version: 5.0.6
 
+  packages/x402-xec-transactions:
+    dependencies:
+      '@x402-xec/core':
+        specifier: 0.1.0
+        version: link:../x402-xec-core
+      ecash-lib:
+        specifier: ^4.12.0
+        version: 4.12.0
+
 packages:
 
   '@esbuild/aix-ppc64@0.28.1':
