@@ -11,6 +11,7 @@ export interface StartedWeatherServer {
   readonly stats: {
     apiRequests: number;
     facilitatorVerifications: number;
+    paymentSignatureHeaders: number;
   };
   close(): Promise<void>;
 }
@@ -23,11 +24,14 @@ export async function startWeatherServer(
   await listen(server);
   const { port } = server.address() as AddressInfo;
   const origin = `http://127.0.0.1:${port}`;
-  const stats = { apiRequests: 0, facilitatorVerifications: 0 };
+  const stats = { apiRequests: 0, facilitatorVerifications: 0, paymentSignatureHeaders: 0 };
   const app = express();
 
-  app.use((_request, _response, next) => {
+  app.use((request, _response, next) => {
     stats.apiRequests += 1;
+    if (request.get("payment-signature") !== undefined) {
+      stats.paymentSignatureHeaders += 1;
+    }
     next();
   });
   app.use(createX402XecMiddleware({

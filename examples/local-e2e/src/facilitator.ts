@@ -1,4 +1,5 @@
 import type { SignatureVerifier } from "@x402-xec/core";
+import { Address, Ecc, shaRmd160 } from "ecash-lib";
 import {
   Facilitator,
   FixtureChronikTxProvider,
@@ -10,8 +11,16 @@ import type { Server } from "node:http";
 import type { AddressInfo } from "node:net";
 
 export const DEMO_NOW = 1_800_000_000;
-export const DEMO_PAY_TO = `ecash:q${"a".repeat(41)}`;
-export const DEMO_PAYER = `ecash:q${"b".repeat(41)}`;
+export const DEMO_SECRET_KEY = Uint8Array.from([
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 1,
+]);
+export const DEMO_PUBLIC_KEY = new Ecc().derivePubkey(DEMO_SECRET_KEY);
+export const DEMO_PAYER = Address.p2pkh(shaRmd160(DEMO_PUBLIC_KEY)).toString();
+export const DEMO_PAY_TO = Address.p2pkh("11".repeat(20)).toString();
+export const DEMO_SOURCE_SCRIPT = Address.fromCashAddress(DEMO_PAYER).toScriptHex();
 export const DEMO_TXID = "c".repeat(64);
 export const DEMO_VOUT = 0;
 

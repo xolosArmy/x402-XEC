@@ -16,6 +16,7 @@ import {
   type SignatureProvider,
   type UnsignedAuthorization,
 } from "@x402-xec/core";
+import type { OfflinePaymentPreparer } from "@x402-xec/payments";
 import {
   isAxiosError,
   type AxiosInstance,
@@ -35,12 +36,25 @@ export interface XecSigner extends SignatureProvider {
   };
 }
 
-export interface X402XecPaymentInterceptorOptions {
-  readonly signer: XecSigner;
+interface X402XecPaymentInterceptorBaseOptions {
   readonly maxPaymentSats: bigint | number | string;
   /** Test hook. Returns epoch seconds. */
   readonly now?: () => number;
 }
+
+export type X402XecPaymentInterceptorOptions =
+  X402XecPaymentInterceptorBaseOptions & (
+    | {
+      /** Legacy local-only mock signer mode. */
+      readonly signer: XecSigner;
+      readonly paymentPreparer?: never;
+    }
+    | {
+      /** Preferred local simulation using offline transaction construction. */
+      readonly paymentPreparer: Pick<OfflinePaymentPreparer, "prepare">;
+      readonly signer?: never;
+    }
+  );
 
 export interface TestOnlyMockXecSignerOptions {
   readonly payer: string;
@@ -68,6 +82,7 @@ export function withX402XecPaymentInterceptor(
 ): AxiosInstance {
   const maxPaymentSats = readMaximum(options.maxPaymentSats);
   const now = options.now ?? (() => Math.floor(Date.now() / 1_000));
+  validatePaymentMode(options);
 
   client.interceptors.response.use(undefined, async (error: unknown) => {
     if (!isAxiosError(error) || error.response?.status !== 402 || !error.config) {
@@ -86,11 +101,12 @@ export function withX402XecPaymentInterceptor(
       );
     }
 
-    const authorization = await createAuthorization(offer.invoice, options.signer);
-    const paymentEnvelope = encodeBase64UrlJson({
-      invoice: offer.invoice,
-      authorization,
-    });
+    const paymentEnvelope = options.paymentPreparer === undefined
+      ? encodeBase64UrlJson({
+        invoice: offer.invoice,
+        authorization: await createAuthorization(offer.invoice, options.signer),
+      })
+      : (await options.paymentPreparer.prepare(offer)).paymentSignature;
 
     config[RETRY_MARKER] = true;
     config.headers.set(PAYMENT_HEADER, paymentEnvelope);
@@ -98,6 +114,14 @@ export function withX402XecPaymentInterceptor(
   });
 
   return client;
+}
+
+function validatePaymentMode(options: X402XecPaymentInterceptorOptions): void {
+  const hasSigner = options.signer !== undefined;
+  const hasPaymentPreparer = options.paymentPreparer !== undefined;
+  if (hasSigner === hasPaymentPreparer) {
+    throw new TypeError("configure exactly one of signer or paymentPreparer");
+  }
 }
 
 /**

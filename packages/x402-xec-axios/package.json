@@ -22,12 +22,14 @@
     "node": ">=20"
   },
   "dependencies": {
-    "@x402-xec/core": "0.1.0"
+    "@x402-xec/core": "0.1.0",
+    "@x402-xec/payments": "0.1.0"
   },
   "peerDependencies": {
     "axios": "^1.7.0"
   },
   "devDependencies": {
-    "axios": "^1.7.0"
+    "axios": "^1.7.0",
+    "ecash-lib": "^4.12.0"
   }
 }

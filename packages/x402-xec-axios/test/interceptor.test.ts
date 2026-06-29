@@ -11,6 +11,8 @@ import {
   type Invoice,
   type ResourceRequest,
 } from "@x402-xec/core";
+import { OfflinePaymentPreparer, StaticUtxoProvider } from "@x402-xec/payments";
+import { Address, ALL_BIP143, Ecc, P2PKHSignatory, shaRmd160 } from "ecash-lib";
 import axios, { type AxiosInstance } from "axios";
 import {
   createTestOnlyMockXecSigner,
@@ -18,8 +20,16 @@ import {
 } from "../src/index.js";
 
 const NOW = 1_800_000_000;
-const PAY_TO = `ecash:q${"a".repeat(41)}`;
-const PAYER = `ecash:q${"b".repeat(41)}`;
+const SECRET_KEY = Uint8Array.from([
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 0,
+  0, 0, 0, 0, 0, 0, 0, 1,
+]);
+const PUBLIC_KEY = new Ecc().derivePubkey(SECRET_KEY);
+const PAYER = Address.p2pkh(shaRmd160(PUBLIC_KEY)).toString();
+const PAY_TO = Address.p2pkh("11".repeat(20)).toString();
+const SOURCE_SCRIPT = Address.fromCashAddress(PAYER).toScriptHex();
 const TXID = "c".repeat(64);
 const NONCE = "local_test_invoice_nonce_000001";
 
@@ -107,6 +117,65 @@ function paymentClient(client: AxiosInstance, maxPaymentSats: bigint = 1_000n): 
     maxPaymentSats,
     now: () => NOW,
   });
+}
+
+interface OfflineClientOptions {
+  readonly maxPaymentSats?: bigint;
+  readonly utxos?: readonly {
+    readonly txid: string;
+    readonly outIdx: number;
+    readonly sats: string;
+    readonly outputScript: string;
+    readonly token?: unknown;
+  }[];
+}
+
+function offlinePaymentClient(
+  client: AxiosInstance,
+  options: OfflineClientOptions = {},
+): {
+  readonly client: AxiosInstance;
+  readonly preparations: string[];
+  readonly attempts: { count: number };
+} {
+  const preparations: string[] = [];
+  const attempts = { count: 0 };
+  const preparer = new OfflinePaymentPreparer({
+    utxoProvider: new StaticUtxoProvider(options.utxos ?? [{
+      txid: "2".repeat(64),
+      outIdx: 1,
+      sats: "10000",
+      outputScript: SOURCE_SCRIPT,
+    }]),
+    signatureProvider: {
+      sign: (message) => canonicalHash({
+        domain: "x402-xec-local-mock-signature-v1",
+        message,
+        payer: PAYER,
+      }),
+    },
+    payer: PAYER,
+    changeAddress: PAYER,
+    signatoryForUtxo: () => P2PKHSignatory(SECRET_KEY, PUBLIC_KEY, ALL_BIP143),
+    maxPaymentSats: 2_000n,
+    now: () => NOW,
+  });
+  return {
+    client: withX402XecPaymentInterceptor(client, {
+      paymentPreparer: {
+        async prepare(request) {
+          attempts.count += 1;
+          const result = await preparer.prepare(request);
+          preparations.push(result.rawTx);
+          return result;
+        },
+      },
+      maxPaymentSats: options.maxPaymentSats ?? 1_000n,
+      now: () => NOW,
+    }),
+    preparations,
+    attempts,
+  };
 }
 
 function replaceInvoice(offer: Record<string, unknown>, invoice: unknown): void {
@@ -239,4 +308,90 @@ test("unsupported payment scheme or asset fails", async (t) => {
 
   await assert.rejects(paymentClient(server.client).get(server.url), /unsupported or inconsistent/);
   assert.equal(server.requests.length, 1);
+});
+
+test("request with OfflinePaymentPreparer receives protected 200 response", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const payment = offlinePaymentClient(server.client);
+
+  const response = await payment.client.get(server.url);
+
+  assert.equal(response.status, 200);
+  assert.equal(payment.preparations.length, 1);
+  assert.match(payment.preparations[0] ?? "", /^[0-9a-f]+$/);
+  const header = server.requests[1]?.headers["payment-signature"];
+  assert.equal(typeof header, "string");
+  const envelope = JSON.parse(
+    Buffer.from(header as string, "base64url").toString("utf8"),
+  ) as { authorization: { transaction: { txid: string; vout: number } } };
+  assert.equal(envelope.authorization.transaction.vout, 0);
+  assert.equal(envelope.authorization.transaction.txid.length, 64);
+});
+
+test("OfflinePaymentPreparer mode rejects an expired invoice before preparation", async (t) => {
+  const server = await startServer({
+    changeOffer: (offer) => {
+      const invoice = { ...(offer.invoice as Invoice), expiresAt: NOW };
+      replaceInvoice(offer, invoice);
+    },
+  });
+  t.after(() => server.close());
+  const payment = offlinePaymentClient(server.client);
+
+  await assert.rejects(payment.client.get(server.url), /invoice has expired/);
+  assert.equal(payment.attempts.count, 0);
+  assert.equal(server.requests.length, 1);
+});
+
+test("OfflinePaymentPreparer mode enforces interceptor max before preparation", async (t) => {
+  const server = await startServer({ amountSats: 1_001n });
+  t.after(() => server.close());
+  const payment = offlinePaymentClient(server.client);
+
+  await assert.rejects(payment.client.get(server.url), /exceeds maxPaymentSats 1000/);
+  assert.equal(payment.preparations.length, 0);
+  assert.equal(payment.attempts.count, 0);
+  assert.equal(server.requests.length, 1);
+});
+
+test("OfflinePaymentPreparer mode rejects insufficient UTXOs without retry", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const payment = offlinePaymentClient(server.client, {
+    utxos: [{ txid: "2".repeat(64), outIdx: 1, sats: "1000", outputScript: SOURCE_SCRIPT }],
+  });
+
+  await assert.rejects(payment.client.get(server.url), /Insufficient funds/);
+  assert.equal(server.requests.length, 1);
+});
+
+test("OfflinePaymentPreparer mode rejects token UTXOs without retry", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const payment = offlinePaymentClient(server.client, {
+    utxos: [{
+      txid: "2".repeat(64),
+      outIdx: 1,
+      sats: "10000",
+      outputScript: SOURCE_SCRIPT,
+      token: { tokenId: "3".repeat(64), atoms: 1n, isMintBaton: false },
+    }],
+  });
+
+  await assert.rejects(payment.client.get(server.url), /Token-bearing UTXOs/);
+  assert.equal(server.requests.length, 1);
+});
+
+test("OfflinePaymentPreparer mode still prevents a retry loop", async (t) => {
+  const server = await startServer({ always402: true });
+  t.after(() => server.close());
+  const payment = offlinePaymentClient(server.client);
+
+  await assert.rejects(payment.client.get(server.url), (error: unknown) => {
+    assert.equal(axios.isAxiosError(error) && error.response?.status, 402);
+    return true;
+  });
+  assert.equal(payment.preparations.length, 1);
+  assert.equal(server.requests.length, 2);
 });

@@ -32,9 +32,15 @@ importers:
       '@x402-xec/facilitator':
         specifier: workspace:*
         version: link:../../packages/x402-xec-facilitator
+      '@x402-xec/payments':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-payments
       axios:
         specifier: ^1.7.0
         version: 1.18.1
+      ecash-lib:
+        specifier: ^4.12.0
+        version: 4.12.0
       express:
         specifier: ^5.1.0
         version: 5.2.1
@@ -48,10 +54,16 @@ importers:
       '@x402-xec/core':
         specifier: 0.1.0
         version: link:../x402-xec-core
+      '@x402-xec/payments':
+        specifier: 0.1.0
+        version: link:../x402-xec-payments
     devDependencies:
       axios:
         specifier: ^1.7.0
         version: 1.18.1
+      ecash-lib:
+        specifier: ^4.12.0
+        version: 4.12.0
 
   packages/x402-xec-core:
     dependencies:

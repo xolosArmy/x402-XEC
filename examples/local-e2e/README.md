@@ -1,16 +1,19 @@
 # Local end-to-end demo
 
-This example runs the complete x402-XEC HTTP flow in one local process:
+This example runs the complete x402-XEC HTTP flow with local HTTP servers and
+in-memory fixtures:
 
-1. A local facilitator starts with `FixtureChronikTxProvider` and an in-memory transactional ledger.
-2. An Express API protects `GET /weather` for 1,000 sats.
-3. An Axios client requests the resource and receives HTTP 402.
-4. The interceptor validates the invoice and resource, then uses a test-only mock signer.
-5. The client retries with `PAYMENT-SIGNATURE`.
-6. Express asks the facilitator to verify and debit the mock funding output.
+1. A facilitator starts with `FixtureChronikTxProvider` and an in-memory ledger.
+2. Express protects `GET /weather` for 1,000 sats.
+3. Axios receives HTTP 402 and validates the invoice and resource metadata.
+4. `OfflinePaymentPreparer` selects a deterministic UTXO, constructs a signed
+   funding transaction offline, and signs the authorization message.
+5. The demo adds the prepared funding transaction to the fixture provider.
+6. Axios retries once with `PAYMENT-SIGNATURE`; Express sends it to the local
+   facilitator, which verifies and debits the fixture output.
 7. The API returns HTTP 200 with deterministic weather JSON.
 
-From the repository root:
+Run it from the repository root:
 
 ```sh
 pnpm --filter local-e2e start
@@ -21,18 +24,21 @@ Expected output includes:
 ```text
 requesting protected resource
 received 402
-generated PAYMENT-SIGNATURE
+prepared PAYMENT-SIGNATURE and rawTx offline
 facilitator verified payment
 received 200
 ```
 
+The test suite also retains the legacy mock-signer variant for backward
+compatibility. `createOfflineClient()` is the preferred local simulation;
+`createClient()` exercises the legacy signer path.
+
 ## Safety and scope
 
-This demo is local-only. The signer and `TestOnlyMockSignatureVerifier` are
-deterministic local-only mocks, not cryptographic wallet signatures. The real
-eCash verifier is not used by this demo. It uses no real XEC, no real Chronik,
-no broadcasting, and no wallet or key custody. Tonalli Wallet, RMZ, and Teyolia
-are not integrated yet.
-
-The mock transaction and ledger exist only in memory and are discarded when the
-process exits.
+The deterministic key and UTXOs are test fixtures controlled by the caller, not
+a wallet or custody implementation. The prepared `rawTx` is never broadcast.
+The facilitator only sees the transaction because the demo explicitly registers
+it with `FixtureChronikTxProvider`; it does not fetch real Chronik. All network
+traffic is limited to the local API and facilitator servers. Real broadcast will
+arrive in a later explicit opt-in change. Tonalli Wallet, RMZ, and Teyolia are
+not integrated.

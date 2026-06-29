@@ -24,6 +24,25 @@ test("local e2e returns 200 with interceptor", async (t) => {
   assert.equal(demo.facilitator.ledger.entries()[0]?.debitedSats, 1_000n);
 });
 
+test("local e2e returns 200 with OfflinePaymentPreparer", async (t) => {
+  const demo = await startLocalE2e();
+  t.after(() => demo.close());
+
+  const response = await demo.createOfflineClient().get(demo.url);
+
+  assert.equal(response.status, 200);
+  assert.equal(demo.server.stats.apiRequests, 2);
+  assert.equal(demo.server.stats.paymentSignatureHeaders, 1);
+  assert.equal(demo.server.stats.facilitatorVerifications, 1);
+  const entry = demo.facilitator.ledger.entries()[0];
+  assert.ok(entry);
+  assert.notEqual(entry.fundingOutpoint.txid, DEMO_TXID);
+  const fixtureTx = await demo.facilitator.txProvider.getTx(
+    entry.fundingOutpoint.txid,
+  );
+  assert.equal(fixtureTx.outputs[0]?.sats, 1_000n);
+});
+
 test("direct request without interceptor returns 402", async (t) => {
   const demo = await startLocalE2e();
   t.after(() => demo.close());

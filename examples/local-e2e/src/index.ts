@@ -2,7 +2,7 @@ import type { XecSigner } from "@x402-xec/axios";
 import type { SignatureVerifier } from "@x402-xec/core";
 import type { AxiosInstance, AxiosResponse } from "axios";
 import { pathToFileURL } from "node:url";
-import { createPaymentClient } from "./client.js";
+import { createOfflinePaymentClient, createPaymentClient } from "./client.js";
 import { startFacilitator, type StartedFacilitator } from "./facilitator.js";
 import {
   startWeatherServer,
@@ -15,6 +15,7 @@ export interface LocalE2e {
   readonly server: StartedWeatherServer;
   readonly url: string;
   createClient(signer?: XecSigner): AxiosInstance;
+  createOfflineClient(): AxiosInstance;
   close(): Promise<void>;
 }
 
@@ -39,6 +40,21 @@ export async function startLocalE2e(
       server,
       url: `${server.origin}/weather`,
       createClient: (signer) => createPaymentClient(logger, signer),
+      createOfflineClient: () => createOfflinePaymentClient(logger, (result) => {
+        facilitator.txProvider.addTransaction({
+          txid: result.fundingTransaction.txid,
+          outputs: [{
+            sats: BigInt(result.fundingTransaction.fundingOutput.amountSats),
+            outputScript: result.fundingTransaction.fundingOutput.outputScript,
+          }],
+          block: {
+            height: 800_001,
+            hash: "e".repeat(64),
+            timestamp: 1_799_999_950,
+          },
+          isFinal: true,
+        });
+      }),
       close: async () => {
         await Promise.all([server.close(), facilitator.close()]);
       },
@@ -53,7 +69,7 @@ export async function runDemo(logger: DemoLogger = console.log): Promise<AxiosRe
   const demo = await startLocalE2e({ logger });
   try {
     logger("requesting protected resource");
-    const response = await demo.createClient().get(demo.url);
+    const response = await demo.createOfflineClient().get(demo.url);
     logger(`received ${response.status}`);
     console.log("weather:", response.data);
     return response;
