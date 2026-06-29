@@ -1,5 +1,6 @@
 export * from "./app.js";
 export * from "./chronik-fixtures.js";
+export * from "./ecash-message-signature.js";
 export * from "./facilitator.js";
 export * from "./ledger.js";
 export * from "./mock-chronik.js";

@@ -7,8 +7,8 @@ request binding, local authorization verification with atomic nonce consumption,
 a read-only transaction provider interface, and replay-protection test vectors.
 
 The local facilitator package adds an Express verification API, fixture-backed
-Chronik funding lookup, an opt-in read-only real Chronik adapter, and a
-transactional in-memory credit ledger. See
+Chronik funding lookup, an opt-in read-only real Chronik adapter, an opt-in eCash
+message-signature verifier, and a transactional in-memory credit ledger. See
 [`packages/x402-xec-facilitator`](packages/x402-xec-facilitator/README.md).
 
 Deterministic Chronik transaction-provider fixtures and their scope are
@@ -34,8 +34,10 @@ pnpm build
 
 ## Scope boundary
 
-`RealChronikTxProvider` is available for future integration but has no default
-endpoint and is not used by the server, tests, or local demo. Enabling it requires
-explicit application configuration. The code cannot construct or broadcast
+`EcashMessageSignatureVerifier` and `RealChronikTxProvider` are opt-in. Neither
+is selected by the local server or demo, and the real Chronik provider has no
+default endpoint. Local E2E uses `TestOnlyMockSignatureVerifier`; mock signatures
+are never wallet signatures. The code cannot construct, sign, or broadcast
 transactions, hold keys, custody funds, or perform a real payment flow. Tonalli
-Wallet, RMZ, Teyolia, and facilitator wallet behavior are not included.
+Wallet comes later as signer UX; RMZ, Teyolia, and facilitator wallet behavior
+are not included.

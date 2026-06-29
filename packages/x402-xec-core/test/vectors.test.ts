@@ -48,6 +48,10 @@ test("payTo change fails", async () => {
   const invoice = makeInvoice();
   assert.deepEqual(await verify(invoice, { ...makeAuthorization(invoice), payTo: `ecash:q${"d".repeat(41)}` }), { ok: false, code: "PAY_TO_MISMATCH" });
 });
+test("nonce change fails", async () => {
+  const invoice = makeInvoice();
+  assert.deepEqual(await verify(invoice, { ...makeAuthorization(invoice), nonce: "YWJjZGVmZ2hpamtsbW5vcA" }), { ok: false, code: "NONCE_MISMATCH" });
+});
 test("expired invoice fails", async () => {
   const invoice = makeInvoice();
   assert.deepEqual(await verify(invoice, makeAuthorization(invoice), request, new InMemoryNonceStore(), invoice.expiresAt), { ok: false, code: "EXPIRED" });

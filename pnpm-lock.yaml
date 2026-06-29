@@ -80,6 +80,9 @@ importers:
       chronik-client:
         specifier: ^4.3.0
         version: 4.3.0
+      ecash-lib:
+        specifier: ^4.12.0
+        version: 4.12.0
       express:
         specifier: ^5.1.0
         version: 5.2.1
@@ -323,6 +326,9 @@ packages:
   axios@1.18.1:
     resolution: {integrity: sha512-3nTvFlvpn9Zu/RkHUqtc7/+al4UpRW5az71ap5zccp6e8RAYEzhMTecX8Dz1wWDYrPpUoB1HAQEGEAEvUr7S9g==}
 
+  b58-ts@0.1.0:
+    resolution: {integrity: sha512-FC/2pfMxrlLQp1o9hwOGAy/1zCHYId5gpojwHL/BqoMFv/BnZXwHDH1zpx9jSL4C9k55Fm2R9j/F868qaQH5kw==}
+
   body-parser@2.3.0:
     resolution: {integrity: sha512-2cGmJupaNgg+QUwVLAucDuWuoMZ6EX9iHDRswZ5lsNYEmwPaRknMPCLZz07yTzVq/83p4o/wzbDZbBrTvGGTIw==}
     engines: {node: '>=18'}
@@ -386,6 +392,9 @@ packages:
   dunder-proto@1.0.1:
     resolution: {integrity: sha512-KIN/nDJBQRcXw0MLVhZE9iQHmG68qAVIBg9CqmUYjmQIhgij9U5MFvrqkUL5FbtyyzZuOeOt0zdeRe4UY7ct+A==}
     engines: {node: '>= 0.4'}
+
+  ecash-lib@4.12.0:
+    resolution: {integrity: sha512-Rz+Oc7cDhYYFEnfPsbCeiqSFXuJFaWqg9u0nkK3OpRpWZp5iJ+9t5LxcB59i8NhNwXG4vyL73GWR8fnrJay1DQ==}
 
   ecashaddrjs@2.0.0:
     resolution: {integrity: sha512-EvK1V4D3+nIEoD0ggy/b0F4lW39/72R9aOs/scm6kxMVuXu16btc+H74eQv7okNfXaQWKgolEekZkQ6wfcMMLw==}
@@ -849,6 +858,8 @@ snapshots:
       - debug
       - supports-color
 
+  b58-ts@0.1.0: {}
+
   body-parser@2.3.0:
     dependencies:
       bytes: 3.1.2
@@ -917,6 +928,11 @@ snapshots:
       call-bind-apply-helpers: 1.0.2
       es-errors: 1.3.0
       gopd: 1.2.0
+
+  ecash-lib@4.12.0:
+    dependencies:
+      b58-ts: 0.1.0
+      ecashaddrjs: 2.0.0
 
   ecashaddrjs@2.0.0: {}
 

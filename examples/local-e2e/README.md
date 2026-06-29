@@ -28,10 +28,11 @@ received 200
 
 ## Safety and scope
 
-This demo is local-only. The signer is a deterministic mock and is not a
-cryptographic wallet signature. It uses no real XEC, no real Chronik, no
-broadcasting, and no wallet or key custody. Tonalli Wallet, RMZ, and Teyolia are
-not integrated yet.
+This demo is local-only. The signer and `TestOnlyMockSignatureVerifier` are
+deterministic local-only mocks, not cryptographic wallet signatures. The real
+eCash verifier is not used by this demo. It uses no real XEC, no real Chronik,
+no broadcasting, and no wallet or key custody. Tonalli Wallet, RMZ, and Teyolia
+are not integrated yet.
 
 The mock transaction and ledger exist only in memory and are discarded when the
 process exits.

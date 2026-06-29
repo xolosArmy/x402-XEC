@@ -41,9 +41,8 @@ at most once.
 
 ## Scope boundary
 
-`createTestOnlyMockXecSigner` creates deterministic hashes accepted by the
-facilitator's local `MockSignatureVerifier`. It is not a cryptographic wallet
-signature and has no keys or custody.
+`createTestOnlyMockXecSigner` creates deterministic hashes accepted by the facilitator's local
+`TestOnlyMockSignatureVerifier`. It is not a cryptographic wallet signature and has no keys or custody.
 
 This package has no Chronik client, transaction construction, broadcast, wallet
 custody, or `ecash-lib` integration. It does not integrate Tonalli, RMZ, or

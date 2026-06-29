@@ -1,5 +1,5 @@
 import type { XecSigner } from "@x402-xec/axios";
-import type { AuthorizationSignatureVerifier } from "@x402-xec/core";
+import type { SignatureVerifier } from "@x402-xec/core";
 import type { AxiosInstance, AxiosResponse } from "axios";
 import { pathToFileURL } from "node:url";
 import { createPaymentClient } from "./client.js";
@@ -20,7 +20,7 @@ export interface LocalE2e {
 
 export interface StartLocalE2eOptions {
   readonly logger?: DemoLogger;
-  readonly signatureVerifier?: AuthorizationSignatureVerifier;
+  readonly signatureVerifier?: SignatureVerifier;
 }
 
 export async function startLocalE2e(

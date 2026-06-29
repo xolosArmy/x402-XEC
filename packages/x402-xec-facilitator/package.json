@@ -25,6 +25,7 @@
   "dependencies": {
     "@x402-xec/core": "0.1.0",
     "chronik-client": "^4.3.0",
+    "ecash-lib": "^4.12.0",
     "express": "^5.1.0",
     "zod": "^4.4.3"
   },

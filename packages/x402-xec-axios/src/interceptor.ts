@@ -13,6 +13,7 @@ import {
   type CanonicalValue,
   type Invoice,
   type ResourceRequest,
+  type SignatureProvider,
   type UnsignedAuthorization,
 } from "@x402-xec/core";
 import {
@@ -26,15 +27,12 @@ const PAYMENT_SCHEME = "xec-prepaid-utxo";
 const PAYMENT_ASSET = "XEC";
 const RETRY_MARKER = "__x402XecPaymentAttempted";
 
-type MaybePromise<T> = T | Promise<T>;
-
-export interface XecSigner {
+export interface XecSigner extends SignatureProvider {
   readonly payer: string;
   readonly transaction: {
     readonly txid: string;
     readonly vout: number;
   };
-  sign(message: string): MaybePromise<string>;
 }
 
 export interface X402XecPaymentInterceptorOptions {

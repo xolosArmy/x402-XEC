@@ -43,8 +43,10 @@ The complete deterministic payloads are in
 
 Invoice and authorization schemas, request canonicalization, resource hashing,
 amount parsing, signature message construction, and nonce consumption all come
-from `@x402-xec/core`. The local mock signature is deterministic and is not a
-wallet signature.
+from `@x402-xec/core`. `TestOnlyMockSignatureVerifier` is deterministic,
+local-only, and is not a wallet signature. `EcashMessageSignatureVerifier` is
+an opt-in adapter around `ecash-lib` `verifyMsg`; it verifies the canonical authorization signing message
+produced by `@x402-xec/core` and is never selected implicitly.
 
 The ledger serializes each idempotency check, core verification, mock funding
 lookup, and debit as one process-local transaction. A failed debit does not
@@ -56,6 +58,18 @@ Ledger entries retain the funding outpoint (`txid` + `outIdx`), payer, payee,
 initial and remaining funding values, debit, invoice ID, nonce, authorization
 digest, and idempotency key. Amounts remain `bigint` internally and serialize as
 canonical decimal strings.
+
+## Signature boundary
+
+`Facilitator` accepts a `SignatureVerifier`. The included local server and E2E
+demo explicitly use `TestOnlyMockSignatureVerifier`. Applications may opt in to
+`EcashMessageSignatureVerifier`; eCash recoverable signatures are represented as
+unpadded base64url in the authorization wire schema.
+
+`SignatureProvider` covers message signing only. Private-key custody, transaction
+construction, transaction signing, and broadcasting are intentionally deferred.
+Tonalli Wallet integration comes later as the signer UX. RMZ and Teyolia remain
+out of scope.
 
 ## Transaction provider boundary
 
@@ -73,6 +87,6 @@ for the provider contract and configuration boundary.
 
 ## Scope boundary
 
-The real provider only reads transactions. This package has no transaction
-broadcast path, wallet keys, custody, or real payment flow. It does not integrate
-Tonalli Wallet, RMZ, or Teyolia.
+The real provider only reads transactions. This package does not construct, sign,
+or broadcast transactions and has no wallet keys, custody, or real payment flow.
+It does not integrate Tonalli Wallet, RMZ, or Teyolia.

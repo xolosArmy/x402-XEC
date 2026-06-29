@@ -3,12 +3,10 @@ import { computeInvoiceHash } from "./invoice.js";
 import type { NonceStore } from "./nonce-store.js";
 import { computeResourceHash, type ResourceRequest } from "./resource.js";
 import { authorizationSchema, invoiceSchema, parseAmountSats, type Authorization, type Invoice, type UnsignedAuthorization } from "./schemas.js";
+import type { SignatureVerifier } from "./signatures.js";
 
 export type VerificationFailureCode = "MALFORMED" | "NOT_YET_VALID" | "EXPIRED" | "RESOURCE_MISMATCH" | "AMOUNT_MISMATCH" | "PAY_TO_MISMATCH" | "NONCE_MISMATCH" | "INVOICE_MISMATCH" | "INVALID_SIGNATURE" | "NONCE_REUSED";
 export type VerificationResult = { readonly ok: true; readonly amountSats: bigint } | { readonly ok: false; readonly code: VerificationFailureCode };
-export interface AuthorizationSignatureVerifier {
-  verify(input: { readonly payer: string; readonly message: string; readonly signature: string }): boolean | Promise<boolean>;
-}
 export function unsignedAuthorization(authorization: Authorization): UnsignedAuthorization {
   const { signature: _signature, ...unsigned } = authorization;
   return unsigned;
@@ -17,7 +15,7 @@ export const authorizationSigningMessage = (authorization: Authorization): strin
 
 export interface VerifyAuthorizationInput {
   readonly invoice: Invoice; readonly authorization: Authorization; readonly request: ResourceRequest;
-  readonly now: number; readonly signatureVerifier: AuthorizationSignatureVerifier; readonly nonceStore: NonceStore;
+  readonly now: number; readonly signatureVerifier: SignatureVerifier; readonly nonceStore: NonceStore;
 }
 export async function verifyAuthorization(input: VerifyAuthorizationInput): Promise<VerificationResult> {
   const parsedInvoice = invoiceSchema.safeParse(input.invoice);

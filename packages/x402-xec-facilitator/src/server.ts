@@ -2,13 +2,13 @@ import type { ChronikTransaction } from "@x402-xec/core";
 import { createApp } from "./app.js";
 import { Facilitator } from "./facilitator.js";
 import { FixtureChronikTxProvider } from "./tx-provider.js";
-import { MockSignatureVerifier } from "./mock-signature.js";
+import { TestOnlyMockSignatureVerifier } from "./mock-signature.js";
 
 const port = parsePort(process.env["PORT"] ?? "3402");
 const transactions = parseFixtures(process.env["MOCK_CHRONIK_FIXTURES"] ?? "[]");
 const facilitator = new Facilitator({
   txProvider: new FixtureChronikTxProvider(transactions),
-  signatureVerifier: new MockSignatureVerifier(),
+  signatureVerifier: new TestOnlyMockSignatureVerifier(),
   ...(process.env["FACILITATOR_NOW"] === undefined
     ? {}
     : { now: () => parseTimestamp(process.env["FACILITATOR_NOW"] as string) }),

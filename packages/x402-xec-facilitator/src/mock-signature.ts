@@ -1,6 +1,6 @@
 import {
   canonicalHash,
-  type AuthorizationSignatureVerifier,
+  type SignatureVerifier,
 } from "@x402-xec/core";
 
 export function createMockSignature(payer: string, message: string): string {
@@ -8,8 +8,11 @@ export function createMockSignature(payer: string, message: string): string {
 }
 
 /** Local test verifier. This is deliberately not a cryptographic wallet signature. */
-export class MockSignatureVerifier implements AuthorizationSignatureVerifier {
+export class TestOnlyMockSignatureVerifier implements SignatureVerifier {
   verify(input: { readonly payer: string; readonly message: string; readonly signature: string }): boolean {
     return input.signature === createMockSignature(input.payer, input.message);
   }
 }
+
+/** @deprecated Use TestOnlyMockSignatureVerifier to make the local-only scope explicit. */
+export { TestOnlyMockSignatureVerifier as MockSignatureVerifier };

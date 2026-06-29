@@ -1,9 +1,9 @@
-import type { AuthorizationSignatureVerifier } from "@x402-xec/core";
+import type { SignatureVerifier } from "@x402-xec/core";
 import {
   Facilitator,
   FixtureChronikTxProvider,
   InMemoryTransactionalLedger,
-  MockSignatureVerifier,
+  TestOnlyMockSignatureVerifier,
   createApp,
 } from "@x402-xec/facilitator";
 import type { Server } from "node:http";
@@ -24,7 +24,7 @@ export interface StartedFacilitator {
 }
 
 export interface StartFacilitatorOptions {
-  readonly signatureVerifier?: AuthorizationSignatureVerifier;
+  readonly signatureVerifier?: SignatureVerifier;
 }
 
 export async function startFacilitator(
@@ -43,7 +43,7 @@ export async function startFacilitator(
   const facilitator = new Facilitator({
     txProvider,
     ledger,
-    signatureVerifier: options.signatureVerifier ?? new MockSignatureVerifier(),
+    signatureVerifier: options.signatureVerifier ?? new TestOnlyMockSignatureVerifier(),
     now: () => DEMO_NOW,
   });
   const server = createApp(facilitator).listen(0, "127.0.0.1");

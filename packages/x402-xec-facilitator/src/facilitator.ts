@@ -6,7 +6,7 @@ import {
   inspectFundingTransaction,
   parseAmountSats,
   verifyAuthorization,
-  type AuthorizationSignatureVerifier,
+  type SignatureVerifier,
   type TxProvider,
   type VerificationFailureCode,
 } from "@x402-xec/core";
@@ -48,7 +48,7 @@ export interface FacilitatorResult {
 
 export interface FacilitatorOptions {
   readonly txProvider: TxProvider;
-  readonly signatureVerifier: AuthorizationSignatureVerifier;
+  readonly signatureVerifier: SignatureVerifier;
   readonly ledger?: InMemoryTransactionalLedger;
   readonly now?: () => number;
 }
@@ -56,7 +56,7 @@ export interface FacilitatorOptions {
 export class Facilitator {
   readonly ledger: InMemoryTransactionalLedger;
   readonly #txProvider: TxProvider;
-  readonly #signatureVerifier: AuthorizationSignatureVerifier;
+  readonly #signatureVerifier: SignatureVerifier;
   readonly #now: () => number;
 
   constructor(options: FacilitatorOptions) {
