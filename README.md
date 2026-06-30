@@ -25,7 +25,10 @@ signatories. It has no network or broadcast capability and holds no keys.
 The [`@x402-xec/payments`](packages/x402-xec-payments/README.md) package includes
 the deterministic `StaticUtxoProvider` and an opt-in, read-only
 `ChronikUtxoProvider` for controlled UTXO discovery. The Chronik provider
-requires an explicit endpoint and eCash address and cannot broadcast or hold keys.
+requires an explicit endpoint and eCash address. The package also defines a
+separate broadcast boundary that is disabled by default; its
+`ChronikTxBroadcaster` requires an explicit endpoint and explicit invocation.
+See [`docs/broadcast-security-boundary.md`](docs/broadcast-security-boundary.md).
 
 The provisional network identifier is `xec:mainnet`. It is isolated as a constant
 so a future standards-based identifier can replace it.
@@ -44,12 +47,13 @@ pnpm build
 ## Scope boundary
 
 `EcashMessageSignatureVerifier`, `RealChronikTxProvider`, and
-`ChronikUtxoProvider` are opt-in. None is selected by the local server or demo,
-and both Chronik adapters require explicit endpoints. Local E2E uses
+`ChronikUtxoProvider`, and `ChronikTxBroadcaster` are opt-in. None is selected by
+the local server or demo, and all Chronik adapters require explicit endpoints.
+Local E2E uses
 `StaticUtxoProvider` and `TestOnlyMockSignatureVerifier`; mock signatures are
 never wallet signatures. The transactions package can construct and sign a raw
-transaction through caller-owned callbacks, but no package can broadcast, hold
-keys, custody funds, or perform an automatic payment flow. The builder and
-read-only UTXO discovery bridge are intended only for controlled testing, not
-automatic mainnet use. Tonalli Wallet, RMZ, Teyolia, and facilitator wallet
-behavior are not included.
+transaction through caller-owned callbacks, but no automatic flow broadcasts,
+holds keys, custodies funds, or initiates mainnet payment. Broadcast requires a
+separately configured provider and explicit method call. Future orchestration
+must also require explicit user configuration and spending caps. Tonalli Wallet,
+RMZ, Teyolia, and facilitator wallet behavior are not included.
