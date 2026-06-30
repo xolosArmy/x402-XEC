@@ -15,7 +15,8 @@ network request. A request occurs only when the caller explicitly invokes
 `broadcastTx`.
 
 `LivePaymentOrchestrator` composes the existing read, build, sign, and broadcast
-boundaries. It defaults to `dryRun: true`, which is the recommended mode. A
+boundaries with a spending-policy evaluator and `ApprovalProvider`. It defaults to `dryRun: true`, which is the recommended
+mode. A
 dry-run may read UTXOs through an explicitly configured provider, but it only
 returns a signed raw transaction, authorization, `PAYMENT-SIGNATURE` envelope,
 and planned broadcast metadata. It does not call `broadcastTx`.
@@ -25,8 +26,15 @@ Live mode is intentionally redundant. It requires all of the following:
 - `dryRun: false`
 - `allowBroadcast: true`
 - an explicitly supplied provider other than `DisabledBroadcastProvider`
-- an explicit `maxPaymentSats`
-- an invoice amount no greater than that maximum
+- an explicit `PaymentPolicy`
+- successful amount, network, scheme, optional destination allowlist, fee, expiry,
+  and execution-mode policy evaluation
+- an approved `ApprovalDecision` from an `ApprovalProvider`
+
+`DisabledApprovalProvider` is the default and rejects every live approval.
+`TestOnlyApprovalProvider` is for deterministic tests only. Dry-run calls neither
+the approval nor broadcast provider and reports that live execution requires
+approval.
 
 Invoice, UTXO, construction, or signing failures occur before the broadcast
 call. Broadcast remains dangerous and potentially irreversible.
@@ -39,5 +47,6 @@ local E2E remains entirely offline.
 This boundary does not accept, derive, store, or manage private keys and provides
 no wallet custody. Tonalli Wallet, RMZ, and Teyolia are not integrated.
 
-Future Tonalli Wallet integration should provide explicit user-approval UX before
-broadcast and keep signing material under wallet control.
+Future Tonalli Wallet integration can implement `ApprovalProvider` as explicit
+user-approval UX before broadcast and keep signing material under wallet control.
+This boundary provides no custody and no automatic mainnet payment flow.
