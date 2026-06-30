@@ -50,18 +50,40 @@ address UTXO response alone cannot establish coinbase maturity. The address
 endpoint supports standard address UTXOs; malformed Chronik responses fail
 closed.
 
+## Broadcast providers
+
+Broadcast is a separate, dangerous network boundary. The package exports
+`BroadcastProvider`, but neither `OfflinePaymentPreparer` nor the Axios
+interceptor invokes it.
+
+`DisabledBroadcastProvider` is the safe choice wherever no broadcaster has been
+explicitly configured and rejects every attempt. `TestOnlyMockBroadcastProvider`
+records raw transaction hex and returns a configured txid for deterministic
+local tests only.
+
+`ChronikTxBroadcaster` is opt-in and requires an explicit HTTP(S) endpoint.
+There is no hardcoded or default public endpoint, no environment-variable
+activation, and no request during construction. Its injected client seam keeps
+all automated tests offline. A network request occurs only when caller code
+explicitly invokes `broadcastTx`.
+
 ## Security and scope
 
-Payment preparation constructs and signs `rawTx` in memory, but neither provider
-nor the preparer broadcasts it. `ChronikUtxoProvider` only reads UTXOs and has no
-broadcast method. It does not accept, derive, or store private keys and does not
-provide wallet custody. Transaction-input signatories and the message-only
-authorization signer remain in caller-controlled code.
+Payment preparation constructs and signs `rawTx` in memory, but neither the UTXO
+providers nor the preparer broadcasts it. `ChronikUtxoProvider` only reads UTXOs.
+The separate broadcast providers do not accept, derive, or store private keys
+and do not provide wallet custody. Transaction-input signatories and the
+message-only authorization signer remain in caller-controlled code.
 
-The Chronik provider is disabled by default and is not an automatic mainnet
-payment flow. Static fixtures remain the deterministic default. Tonalli Wallet,
-RMZ, and Teyolia are not integrated.
+Chronik UTXO reads and transaction broadcast are disabled by default and do not
+form an automatic mainnet payment flow. Static fixtures remain deterministic.
+The local E2E demo uses no real broadcaster. Tonalli Wallet, RMZ, and Teyolia are
+not integrated.
 
 A facilitator can verify the candidate funding outpoint only when its configured
-fixture or `TxProvider` knows the generated transaction. Broadcasting remains a
-separate, future explicit boundary.
+fixture or `TxProvider` knows the generated transaction. Any future live payment
+orchestrator must require explicit user configuration, an explicitly selected
+broadcaster, and caller-controlled spending caps.
+
+See [the broadcast security boundary](../../docs/broadcast-security-boundary.md)
+for the full scope.
