@@ -6,7 +6,12 @@ import {
   TestOnlyMockBroadcastProvider,
 } from "@x402-xec/payments";
 import { Address, Ecc, shaRmd160 } from "ecash-lib";
-import { parseCliArgs, runManualPaymentCli } from "../src/cli.js";
+import {
+  BROADCAST_CONFIRMATION_PHRASE,
+  DEFAULT_MAX_BROADCAST_SATS,
+  parseCliArgs,
+  runManualPaymentCli,
+} from "../src/cli.js";
 
 const NOW = 1_800_000_000;
 const PRIVATE_KEY = "00".repeat(31) + "01";
@@ -76,12 +81,27 @@ test("broadcast fails without explicit confirmation flag", () => {
   );
 });
 
+test("broadcast requires the exact confirmation phrase", () => {
+  assert.throws(
+    () => parseCliArgs([
+      "broadcast",
+      "--allow-broadcast",
+      "--yes-i-understand-this-broadcasts-xec",
+      "--confirmation-phrase", "broadcast please",
+      "--max-payment-sats", "1000",
+      ...baseArgs,
+    ]),
+    new RegExp(BROADCAST_CONFIRMATION_PHRASE),
+  );
+});
+
 test("broadcast fails without maxPaymentSats", () => {
   assert.throws(
     () => parseCliArgs([
       "broadcast",
       "--allow-broadcast",
       "--yes-i-understand-this-broadcasts-xec",
+      "--confirmation-phrase", BROADCAST_CONFIRMATION_PHRASE,
       ...baseArgs,
     ]),
     /--max-payment-sats/,
@@ -95,6 +115,7 @@ test("broadcast fails if policy rejects amount", async () => {
       "broadcast",
       "--allow-broadcast",
       "--yes-i-understand-this-broadcasts-xec",
+      "--confirmation-phrase", BROADCAST_CONFIRMATION_PHRASE,
       "--max-payment-sats", "999",
       ...baseArgs,
     ], {
@@ -113,6 +134,7 @@ test("broadcast never runs when approval provider rejects", async () => {
       "broadcast",
       "--allow-broadcast",
       "--yes-i-understand-this-broadcasts-xec",
+      "--confirmation-phrase", BROADCAST_CONFIRMATION_PHRASE,
       "--max-payment-sats", "1000",
       ...baseArgs,
     ], {
@@ -144,6 +166,7 @@ test("broadcast succeeds with explicit test approval and mock broadcaster", asyn
       "broadcast",
       "--allow-broadcast",
       "--yes-i-understand-this-broadcasts-xec",
+      "--confirmation-phrase", BROADCAST_CONFIRMATION_PHRASE,
       "--max-payment-sats", "1000",
       ...baseArgs,
     ], {
@@ -171,4 +194,68 @@ test("CLI output never logs private key material", async () => {
   assert.equal(output.includes(PRIVATE_KEY), false);
   assert.equal(output.includes(Buffer.from(SECRET_BYTES).toString("base64")), false);
   assert.equal(output.includes("--private-key"), false);
+});
+
+test("broadcast refuses amounts above the conservative default", () => {
+  const highAmountArgs = baseArgs.map((value) => value === "1000" ? "1001" : value);
+  assert.throws(
+    () => parseCliArgs([
+      "broadcast",
+      "--allow-broadcast",
+      "--yes-i-understand-this-broadcasts-xec",
+      "--confirmation-phrase", BROADCAST_CONFIRMATION_PHRASE,
+      "--max-payment-sats", "1001",
+      ...highAmountArgs,
+    ]),
+    new RegExp(`conservative default limit of ${DEFAULT_MAX_BROADCAST_SATS} sats`),
+  );
+});
+
+test("explicit conservative-limit override retains maxPaymentSats policy", async () => {
+  const broadcaster = new TestOnlyMockBroadcastProvider("ab".repeat(32));
+  const highAmountArgs = baseArgs.map((value) => value === "1000" ? "1001" : value);
+  const result = await runManualPaymentCli([
+    "broadcast",
+    "--allow-broadcast",
+    "--yes-i-understand-this-broadcasts-xec",
+    "--confirmation-phrase", BROADCAST_CONFIRMATION_PHRASE,
+    "--override-conservative-limit",
+    "--max-payment-sats", "1001",
+    ...highAmountArgs,
+  ], {
+    ...dependencies(broadcaster),
+    approvalProvider: new TestOnlyApprovalProvider({ approved: true }),
+  });
+  assert.equal(result.broadcasted, true);
+  assert.equal(result.plannedBroadcast.amountSats, "1001");
+  assert.equal(broadcaster.broadcasts.length, 1);
+});
+
+test("mainnet execution emits an explicit warning", async () => {
+  const lines: string[] = [];
+  await runManualPaymentCli(baseArgs, {
+    ...dependencies(),
+    log: (line) => lines.push(line),
+  });
+  assert.match(lines[0] ?? "", /WARNING: eCash mainnet/);
+  assert.match(lines[0] ?? "", /DRY RUN/);
+});
+
+test("provider errors redact supplied private key material", async () => {
+  await assert.rejects(
+    runManualPaymentCli(baseArgs, {
+      ...dependencies(),
+      utxoProvider: {
+        getUtxos() {
+          throw new Error(`provider accidentally included ${PRIVATE_KEY}`);
+        },
+      },
+    }),
+    (error: unknown) => {
+      assert.ok(error instanceof Error);
+      assert.equal(error.message.includes(PRIVATE_KEY), false);
+      assert.match(error.message, /\[REDACTED\]/);
+      return true;
+    },
+  );
 });
