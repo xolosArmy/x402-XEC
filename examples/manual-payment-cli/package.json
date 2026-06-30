@@ -1,0 +1,23 @@
+{
+  "name": "manual-payment-cli",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Experimental manual dry-run and explicitly gated XEC payment CLI",
+  "type": "module",
+  "bin": {
+    "x402-xec-manual-payment": "./dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "tsx src/index.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": { "node": ">=20" },
+  "dependencies": {
+    "@x402-xec/core": "workspace:*",
+    "@x402-xec/payments": "workspace:*",
+    "@x402-xec/transactions": "workspace:*",
+    "ecash-lib": "^4.12.0"
+  }
+}
