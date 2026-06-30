@@ -14,14 +14,30 @@ read environment variables to activate broadcasting. Construction performs no
 network request. A request occurs only when the caller explicitly invokes
 `broadcastTx`.
 
-The broadcaster does not create an automatic mainnet payment flow and is not
-wired into the Axios interceptor, `OfflinePaymentPreparer`, or the local E2E
-demo. Automated tests use injected mock Chronik clients and never submit a
-transaction to a network.
+`LivePaymentOrchestrator` composes the existing read, build, sign, and broadcast
+boundaries. It defaults to `dryRun: true`, which is the recommended mode. A
+dry-run may read UTXOs through an explicitly configured provider, but it only
+returns a signed raw transaction, authorization, `PAYMENT-SIGNATURE` envelope,
+and planned broadcast metadata. It does not call `broadcastTx`.
+
+Live mode is intentionally redundant. It requires all of the following:
+
+- `dryRun: false`
+- `allowBroadcast: true`
+- an explicitly supplied provider other than `DisabledBroadcastProvider`
+- an explicit `maxPaymentSats`
+- an invoice amount no greater than that maximum
+
+Invoice, UTXO, construction, or signing failures occur before the broadcast
+call. Broadcast remains dangerous and potentially irreversible.
+
+The orchestrator is not wired into the Axios interceptor or local E2E demo and
+does not create an automatic mainnet payment flow. Automated tests use static
+UTXOs and mock broadcasters and never submit a transaction to a network. The
+local E2E remains entirely offline.
 
 This boundary does not accept, derive, store, or manage private keys and provides
 no wallet custody. Tonalli Wallet, RMZ, and Teyolia are not integrated.
 
-Any future live payment orchestrator must require explicit user configuration,
-an explicitly selected broadcaster, and caller-controlled spending caps. It must
-not turn transaction preparation into implicit broadcast.
+Future Tonalli Wallet integration should provide explicit user-approval UX before
+broadcast and keep signing material under wallet control.
