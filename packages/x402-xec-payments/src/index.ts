@@ -18,6 +18,7 @@ import {
 } from "@x402-xec/core";
 import {
   buildFundingTx,
+  type BuildFundingTxRequest,
   type BuildFundingTxResult,
   type FundingUtxo,
 } from "@x402-xec/transactions";
@@ -25,6 +26,7 @@ import type { Signatory } from "ecash-lib";
 
 export * from "./chronik-utxo-provider.js";
 export * from "./broadcast-provider.js";
+export * from "./live-payment-orchestrator.js";
 
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE" as const;
 
@@ -76,12 +78,18 @@ export interface OfflinePaymentPreparerOptions {
    * caller-controlled code.
    */
   readonly signatoryForUtxo: (utxo: FundingUtxo) => Signatory;
+  /** Injectable transaction builder. Defaults to the package's offline builder. */
+  readonly transactionBuilder?: FundingTransactionBuilder;
   readonly maxPaymentSats: bigint | number | string;
   readonly feePerKb?: string;
   readonly dustSats?: string;
   /** Test hook returning non-negative epoch seconds. */
   readonly now?: () => number;
 }
+
+export type FundingTransactionBuilder = (
+  request: BuildFundingTxRequest,
+) => BuildFundingTxResult;
 
 /**
  * Connects validated HTTP 402 metadata to offline transaction construction and
@@ -119,7 +127,7 @@ export class OfflinePaymentPreparer {
       throw new TypeError("UtxoProvider must return an array");
     }
 
-    const fundingTransaction = buildFundingTx({
+    const fundingTransaction = (this.#options.transactionBuilder ?? buildFundingTx)({
       invoice,
       utxos,
       changeAddress: this.#options.changeAddress,

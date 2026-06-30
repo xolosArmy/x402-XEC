@@ -25,10 +25,12 @@ signatories. It has no network or broadcast capability and holds no keys.
 The [`@x402-xec/payments`](packages/x402-xec-payments/README.md) package includes
 the deterministic `StaticUtxoProvider` and an opt-in, read-only
 `ChronikUtxoProvider` for controlled UTXO discovery. The Chronik provider
-requires an explicit endpoint and eCash address. The package also defines a
-separate broadcast boundary that is disabled by default; its
-`ChronikTxBroadcaster` requires an explicit endpoint and explicit invocation.
-See [`docs/broadcast-security-boundary.md`](docs/broadcast-security-boundary.md).
+requires an explicit endpoint and eCash address. `LivePaymentOrchestrator`
+composes payment planning in recommended dry-run mode by default. Its separate
+broadcast boundary requires live mode, explicit permission, a non-disabled
+provider, and a caller-defined spending cap. It is not wired into Axios or the
+offline local E2E. See
+[`docs/broadcast-security-boundary.md`](docs/broadcast-security-boundary.md).
 
 The provisional network identifier is `xec:mainnet`. It is isolated as a constant
 so a future standards-based identifier can replace it.
@@ -54,6 +56,7 @@ Local E2E uses
 never wallet signatures. The transactions package can construct and sign a raw
 transaction through caller-owned callbacks, but no automatic flow broadcasts,
 holds keys, custodies funds, or initiates mainnet payment. Broadcast requires a
-separately configured provider and explicit method call. Future orchestration
-must also require explicit user configuration and spending caps. Tonalli Wallet,
-RMZ, Teyolia, and facilitator wallet behavior are not included.
+separately configured provider, `dryRun: false`, `allowBroadcast: true`, and an
+explicit spending cap. Tonalli Wallet, RMZ, Teyolia, and facilitator wallet
+behavior are not included; future wallet integration must add user approval
+before broadcast.

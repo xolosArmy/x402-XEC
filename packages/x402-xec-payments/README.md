@@ -14,6 +14,59 @@ const result = await preparer.prepare({ invoice, resource });
 request.headers.set("PAYMENT-SIGNATURE", result.paymentSignature);
 ```
 
+## Live payment orchestration
+
+`LivePaymentOrchestrator` composes a `UtxoProvider`, the offline funding
+transaction builder, caller-controlled transaction signatories, a message-only
+`SignatureProvider`, and a `BroadcastProvider`. Despite its name, it defaults to
+`dryRun: true`; dry-run is the recommended mode.
+
+In dry-run mode, `execute()` reads configured UTXOs, builds the signed funding
+transaction, signs the authorization, and returns `rawTxHex`, the funding
+outpoint, authorization, `PAYMENT-SIGNATURE` value, and planned broadcast
+metadata. It never calls `broadcastTx`, even if a broadcaster was provided.
+
+```ts
+const orchestrator = new LivePaymentOrchestrator({
+  utxoProvider,
+  signatureProvider,
+  payer,
+  changeAddress,
+  signatoryForUtxo,
+  // dryRun defaults to true
+});
+
+const plan = await orchestrator.execute({ invoice, resource });
+console.log(plan.rawTxHex, plan.plannedBroadcast);
+```
+
+Broadcast is dangerous and potentially irreversible. Live mode is accepted only
+when every safety control is explicit:
+
+```ts
+const orchestrator = new LivePaymentOrchestrator({
+  utxoProvider,
+  signatureProvider,
+  broadcastProvider, // must not be DisabledBroadcastProvider
+  payer,
+  changeAddress,
+  signatoryForUtxo,
+  dryRun: false,
+  allowBroadcast: true,
+  maxPaymentSats: 10_000n,
+});
+```
+
+Before broadcasting, the orchestrator validates invoice expiry and resource
+binding, enforces `invoice.amountSats <= maxPaymentSats`, rejects insufficient or
+token-bearing UTXOs, builds and signs the payment, and generates the envelope.
+Failure at any stage prevents the broadcaster call.
+
+This API is not wired into `@x402-xec/axios`, does not enable automatic mainnet
+payments, and does not create wallet custody. It does not integrate Tonalli
+Wallet, RMZ, or Teyolia. A future Tonalli Wallet integration should supply
+caller-controlled signers and an explicit user-approval UX before any broadcast.
+
 ## UTXO providers
 
 `StaticUtxoProvider` is the deterministic default for tests, fixtures, and the
@@ -53,8 +106,9 @@ closed.
 ## Broadcast providers
 
 Broadcast is a separate, dangerous network boundary. The package exports
-`BroadcastProvider`, but neither `OfflinePaymentPreparer` nor the Axios
-interceptor invokes it.
+`BroadcastProvider`. `OfflinePaymentPreparer` and the Axios interceptor never
+invoke it. `LivePaymentOrchestrator` invokes it only after live mode and all
+safety controls have been explicitly enabled.
 
 `DisabledBroadcastProvider` is the safe choice wherever no broadcaster has been
 explicitly configured and rejects every attempt. `TestOnlyMockBroadcastProvider`
@@ -77,13 +131,12 @@ message-only authorization signer remain in caller-controlled code.
 
 Chronik UTXO reads and transaction broadcast are disabled by default and do not
 form an automatic mainnet payment flow. Static fixtures remain deterministic.
-The local E2E demo uses no real broadcaster. Tonalli Wallet, RMZ, and Teyolia are
-not integrated.
+The local E2E demo stays offline and uses no broadcaster. Tonalli Wallet, RMZ,
+and Teyolia are not integrated.
 
 A facilitator can verify the candidate funding outpoint only when its configured
 fixture or `TxProvider` knows the generated transaction. Any future live payment
-orchestrator must require explicit user configuration, an explicitly selected
-broadcaster, and caller-controlled spending caps.
+integration must preserve explicit user approval and caller-controlled limits.
 
 See [the broadcast security boundary](../../docs/broadcast-security-boundary.md)
 for the full scope.
