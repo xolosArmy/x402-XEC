@@ -30,6 +30,8 @@ export interface ParsedCliOptions {
   readonly mode: CliMode;
   readonly allowBroadcast: boolean;
   readonly confirmation: boolean;
+  readonly confirmationPhrase?: string;
+  readonly overrideConservativeLimit: boolean;
   readonly chronikUrl?: string;
   readonly fromAddress?: string;
   readonly wif?: string;
@@ -55,12 +57,17 @@ const RESOURCE: ResourceRequest = {
   body: null,
 };
 
+export const BROADCAST_CONFIRMATION_PHRASE = "I UNDERSTAND THIS BROADCASTS XEC";
+export const DEFAULT_MAX_BROADCAST_SATS = 1_000n;
+
 const BOOLEAN_FLAGS = new Map<string, keyof ParsedCliOptions>([
   ["--allow-broadcast", "allowBroadcast"],
   ["--yes-i-understand-this-broadcasts-xec", "confirmation"],
+  ["--override-conservative-limit", "overrideConservativeLimit"],
 ]);
 
 const VALUE_FLAGS = new Map<string, keyof ParsedCliOptions>([
+  ["--confirmation-phrase", "confirmationPhrase"],
   ["--chronik-url", "chronikUrl"],
   ["--from-address", "fromAddress"],
   ["--wif", "wif"],
@@ -105,6 +112,10 @@ export function parseCliArgs(argv: readonly string[]): ParsedCliOptions {
     mode,
     allowBroadcast: values.allowBroadcast === true,
     confirmation: values.confirmation === true,
+    overrideConservativeLimit: values.overrideConservativeLimit === true,
+    ...(typeof values.confirmationPhrase === "string"
+      ? { confirmationPhrase: values.confirmationPhrase }
+      : {}),
     ...(typeof values.chronikUrl === "string" ? { chronikUrl: values.chronikUrl } : {}),
     ...(typeof values.fromAddress === "string" ? { fromAddress: values.fromAddress } : {}),
     ...(typeof values.wif === "string" ? { wif: values.wif } : {}),
@@ -121,16 +132,19 @@ export async function runManualPaymentCli(
   argv: readonly string[],
   dependencies: ManualPaymentCliDependencies = {},
 ): Promise<LivePaymentResult> {
-  const options = parseCliArgs(argv);
-  const required = requiredExecutionOptions(options, dependencies);
-  const secretKey = readSecretKey(options);
+  const suppliedSecrets = collectSuppliedSecrets(argv);
+  let secretKey: Uint8Array | undefined;
 
   try {
+    const options = parseCliArgs(argv);
+    const required = requiredExecutionOptions(options, dependencies);
+    const loadedSecretKey = readSecretKey(options);
+    secretKey = loadedSecretKey;
     const ecc = new Ecc();
-    if (!ecc.isValidSeckey(secretKey)) {
+    if (!ecc.isValidSeckey(loadedSecretKey)) {
       throw new CliUsageError("private key is not a valid secp256k1 key");
     }
-    const publicKey = ecc.derivePubkey(secretKey);
+    const publicKey = ecc.derivePubkey(loadedSecretKey);
     const derivedAddress = Address.p2pkh(shaRmd160(publicKey)).toString();
     if (derivedAddress !== required.fromAddress) {
       throw new CliUsageError("--from-address does not match the supplied signing key");
@@ -146,6 +160,7 @@ export async function runManualPaymentCli(
       expiresAt: now + 300,
     });
     const dryRun = options.mode === "dry-run";
+    printSafetyWarning(dryRun, dependencies.log ?? console.log);
     const utxoProvider = dependencies.utxoProvider ?? new ChronikUtxoProvider({
       endpoint: required.chronikUrl,
       address: required.fromAddress,
@@ -154,10 +169,13 @@ export async function runManualPaymentCli(
       ? undefined
       : new ChronikTxBroadcaster({ endpoint: required.chronikUrl }));
     const approvalProvider = dependencies.approvalProvider
-      ?? new ExplicitConfirmationApprovalProvider(options.confirmation);
+      ?? new ExplicitConfirmationApprovalProvider(
+        options.confirmation
+        && options.confirmationPhrase === BROADCAST_CONFIRMATION_PHRASE,
+      );
     const signatureProvider: SignatureProvider = {
       sign(message) {
-        return signMsg(message, secretKey)
+        return signMsg(message, loadedSecretKey)
           .replaceAll("+", "-")
           .replaceAll("/", "_")
           .replace(/=+$/, "");
@@ -168,7 +186,7 @@ export async function runManualPaymentCli(
       signatureProvider,
       payer: required.fromAddress,
       changeAddress: required.fromAddress,
-      signatoryForUtxo: () => P2PKHSignatory(secretKey, publicKey, ALL_BIP143),
+      signatoryForUtxo: () => P2PKHSignatory(loadedSecretKey, publicKey, ALL_BIP143),
       dryRun,
       allowBroadcast: options.allowBroadcast,
       paymentPolicy: {
@@ -185,8 +203,10 @@ export async function runManualPaymentCli(
     const result = await orchestrator.execute({ invoice, resource: RESOURCE });
     printResult(result, dependencies.log ?? console.log);
     return result;
+  } catch (error) {
+    throw sanitizeError(error, suppliedSecrets);
   } finally {
-    secretKey.fill(0);
+    secretKey?.fill(0);
   }
 }
 
@@ -256,8 +276,26 @@ function validateModeGates(options: ParsedCliOptions): void {
       "broadcast mode requires --yes-i-understand-this-broadcasts-xec",
     );
   }
+  if (options.confirmationPhrase !== BROADCAST_CONFIRMATION_PHRASE) {
+    throw new CliUsageError(
+      `broadcast mode requires --confirmation-phrase "I UNDERSTAND THIS BROADCASTS XEC"`,
+    );
+  }
   if (options.maxPaymentSats === undefined) {
     throw new CliUsageError("broadcast mode requires --max-payment-sats");
+  }
+  const amountSats = canonicalPositiveSats(
+    requireValue(options.amountSats, "--amount-sats"),
+    "--amount-sats",
+  );
+  if (
+    BigInt(amountSats) > DEFAULT_MAX_BROADCAST_SATS
+    && !options.overrideConservativeLimit
+  ) {
+    throw new CliUsageError(
+      `broadcast amount exceeds the conservative default limit of 1000 sats; `
+      + "use --override-conservative-limit only for an explicitly reviewed manual test",
+    );
   }
   for (const [value, flag] of [
     [options.chronikUrl, "--chronik-url"],
@@ -346,6 +384,35 @@ function printResult(result: LivePaymentResult, log: (line: string) => void): vo
       ? { txid: result.broadcastResult.txid }
       : { warning: "DRY RUN ONLY: transaction was not broadcast" }),
   }, null, 2));
+}
+
+function printSafetyWarning(dryRun: boolean, log: (line: string) => void): void {
+  log(dryRun
+    ? "WARNING: eCash mainnet configuration detected. DRY RUN: no transaction will be broadcast."
+    : "WARNING: eCash mainnet broadcast is enabled. Broadcast is irreversible.");
+}
+
+function collectSuppliedSecrets(argv: readonly string[]): readonly string[] {
+  const secrets: string[] = [];
+  for (let index = 0; index < argv.length - 1; index += 1) {
+    if (argv[index] === "--wif" || argv[index] === "--private-key") {
+      secrets.push(argv[index + 1]!);
+      index += 1;
+    }
+  }
+  return secrets;
+}
+
+function sanitizeError(error: unknown, secrets: readonly string[]): Error {
+  const originalMessage = error instanceof Error ? error.message : "unknown CLI failure";
+  const message = secrets.reduce(
+    (redacted, secret) => secret.length === 0 ? redacted : redacted.replaceAll(secret, "[REDACTED]"),
+    originalMessage,
+  );
+  if (error instanceof CliUsageError) return new CliUsageError(message);
+  const sanitized = new Error(message);
+  sanitized.name = error instanceof Error ? error.name : "Error";
+  return sanitized;
 }
 
 function rejectDuplicate(

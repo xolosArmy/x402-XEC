@@ -12,6 +12,11 @@ arguments may still be visible in shell history and the operating-system process
 list, so use only isolated local/manual test environments and disposable,
 low-value keys.
 
+Follow the complete [controlled smoke-test guide](../../docs/manual-smoke-test.md)
+before any live experiment. Always dry-run first, use tiny amounts and a
+dedicated wallet, never paste a primary wallet WIF, never commit secrets, and
+remember that broadcast is irreversible.
+
 ## Dry-run
 
 ```sh
@@ -36,6 +41,7 @@ Do not use large amounts. It will run only when every broadcast gate is present:
 pnpm --filter manual-payment-cli start -- broadcast \
   --allow-broadcast \
   --yes-i-understand-this-broadcasts-xec \
+  --confirmation-phrase 'I UNDERSTAND THIS BROADCASTS XEC' \
   --chronik-url https://your-explicit-chronik.example \
   --from-address ecash:... \
   --wif ... \
@@ -46,6 +52,9 @@ pnpm --filter manual-payment-cli start -- broadcast \
 
 The CLI applies `PaymentPolicy`, crosses an explicit `ApprovalProvider`
 boundary, and then uses `ChronikTxBroadcaster`. Missing gates fail closed.
+Broadcast amounts above the independent conservative default of 1,000 sats are
+refused unless `--override-conservative-limit` is also supplied. The override
+does not replace the required `--max-payment-sats` policy limit.
 
 There are no automatic payments, and this CLI is not connected to the Axios
 interceptor. It is not a wallet and does not custody funds or persist secrets.

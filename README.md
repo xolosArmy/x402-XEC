@@ -23,6 +23,8 @@ The experimental
 recommended dry-run payment planning and a dangerous, explicitly gated manual
 broadcast mode. It is not connected to Axios, provides no custody or automatic
 payments, and must not be used with large amounts.
+See the [controlled manual smoke-test guide](docs/manual-smoke-test.md) for the
+required dry-run procedure and live guardrails.
 
 The [`@x402-xec/transactions`](packages/x402-xec-transactions/README.md) package
 constructs signed XEC funding transactions offline from caller-provided UTXOs and
