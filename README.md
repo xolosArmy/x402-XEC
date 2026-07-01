@@ -70,6 +70,11 @@ pnpm typecheck
 pnpm build
 ```
 
+## Release
+
+Before preparing or publishing an npm release, complete the
+[npm publishing preflight checklist](docs/npm-publishing-preflight.md).
+
 ## Scope boundary
 
 `EcashMessageSignatureVerifier`, `RealChronikTxProvider`, and
