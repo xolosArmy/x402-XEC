@@ -12,7 +12,11 @@ import {
   type Invoice,
   type ResourceRequest,
 } from "@x402-xec/core";
-import axios, { type AxiosInstance } from "axios";
+import axios, {
+  AxiosError,
+  type AxiosInstance,
+  type InternalAxiosRequestConfig,
+} from "axios";
 import {
   createTestOnlyMockXecSigner,
   type PaymentOrchestrator,
@@ -37,6 +41,11 @@ interface StartedServer {
   readonly url: string;
   readonly requests: IncomingMessage[];
   close(): Promise<void>;
+}
+
+interface AdapterFixture {
+  readonly client: AxiosInstance;
+  readonly requests: InternalAxiosRequestConfig[];
 }
 
 async function startServer(options: TestServerOptions = {}): Promise<StartedServer> {
@@ -124,6 +133,84 @@ function orchestratorClient(
   });
 }
 
+function relativeUrlAdapterFixture(resource: ResourceRequest): AdapterFixture {
+  const requests: InternalAxiosRequestConfig[] = [];
+  const invoice = createInvoice({
+    request: resource,
+    amountSats: 1_000n,
+    payTo: PAY_TO,
+    nonce: NONCE,
+    issuedAt: NOW - 1,
+    expiresAt: NOW + 60,
+  });
+  const offer = {
+    x402Version: 1,
+    invoiceId: computeInvoiceHash(invoice),
+    invoice,
+    resource,
+    accepts: [{
+      asset: "XEC",
+      network: "xec:mainnet",
+      scheme: "xec-prepaid-utxo",
+      amountSats: invoice.amountSats,
+      payTo: invoice.payTo,
+      paymentHeader: "PAYMENT-SIGNATURE",
+    }],
+  };
+  const client = axios.create({
+    adapter: async (config) => {
+      requests.push(config);
+      if (!config.headers.has("PAYMENT-SIGNATURE")) {
+        throw new AxiosError(
+          "Request failed with status code 402",
+          AxiosError.ERR_BAD_REQUEST,
+          config,
+          undefined,
+          {
+            config,
+            data: offer,
+            headers: {},
+            status: 402,
+            statusText: "Payment Required",
+          },
+        );
+      }
+      return {
+        config,
+        data: { ok: true },
+        headers: {},
+        status: 200,
+        statusText: "OK",
+      };
+    },
+  });
+  return { client, requests };
+}
+
+async function withGlobalLocation(
+  origin: string | undefined,
+  action: () => Promise<void>,
+): Promise<void> {
+  const original = Object.getOwnPropertyDescriptor(globalThis, "location");
+  if (origin === undefined) {
+    Reflect.deleteProperty(globalThis, "location");
+  } else {
+    Object.defineProperty(globalThis, "location", {
+      configurable: true,
+      value: { origin },
+    });
+  }
+  try {
+    await action();
+  } finally {
+    if (original === undefined) {
+      Reflect.deleteProperty(globalThis, "location");
+    } else {
+      Object.defineProperty(globalThis, "location", original);
+    }
+  }
+}
+
 function replaceInvoice(offer: Record<string, unknown>, invoice: unknown): void {
   offer.invoice = invoice;
   if (typeof invoice === "object" && invoice !== null) {
@@ -155,6 +242,45 @@ test("request with interceptor receives protected 200 response", async (t) => {
   assert.equal(response.status, 200);
   assert.deepEqual(response.data, { ok: true, protected: "forecast" });
   assert.equal(server.requests.length, 2);
+});
+
+test("browser relative URL binds against globalThis.location.origin", async () => {
+  const fixture = relativeUrlAdapterFixture({
+    serverOrigin: "http://example.test",
+    method: "GET",
+    path: "/api/weather",
+  });
+
+  await withGlobalLocation("http://example.test", async () => {
+    const response = await paymentClient(fixture.client).get("/api/weather");
+
+    assert.equal(response.status, 200);
+    assert.equal(fixture.requests.length, 2);
+    assert.equal(
+      typeof fixture.requests[1]?.headers.get("PAYMENT-SIGNATURE"),
+      "string",
+    );
+  });
+});
+
+test("relative URL without a safe base fails closed", async () => {
+  const fixture = relativeUrlAdapterFixture({
+    serverOrigin: "http://example.test",
+    method: "GET",
+    path: "/api/weather",
+  });
+
+  await withGlobalLocation(undefined, async () => {
+    await assert.rejects(
+      paymentClient(fixture.client).get("/api/weather"),
+      /cannot bind x402-XEC invoice to request URL/,
+    );
+    assert.equal(fixture.requests.length, 1);
+    assert.equal(
+      fixture.requests[0]?.headers.has("PAYMENT-SIGNATURE"),
+      false,
+    );
+  });
 });
 
 test("invalid invoice fails without retrying", async (t) => {

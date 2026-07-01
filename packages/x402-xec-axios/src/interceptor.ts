@@ -110,6 +110,12 @@ interface RetryConfig extends InternalAxiosRequestConfig {
   [RETRY_MARKER]?: boolean;
 }
 
+interface BrowserGlobal {
+  readonly location?: {
+    readonly origin?: unknown;
+  };
+}
+
 /**
  * Installs a local-only response interceptor and returns the same Axios instance.
  */
@@ -335,12 +341,7 @@ function validateRequestedResource(
   resource: ResourceRequest,
   config: InternalAxiosRequestConfig,
 ): void {
-  let requested: URL;
-  try {
-    requested = new URL(config.url ?? "", config.baseURL);
-  } catch {
-    throw new Error("cannot bind x402-XEC invoice to request URL");
-  }
+  const requested = resolveRequestedUrl(config);
   const method = (config.method ?? "get").toUpperCase();
   if (
     requested.origin !== resource.serverOrigin
@@ -348,6 +349,33 @@ function validateRequestedResource(
     || method !== resource.method.toUpperCase()
   ) {
     throw new Error("x402-XEC resource metadata does not match the original request");
+  }
+}
+
+function resolveRequestedUrl(config: InternalAxiosRequestConfig): URL {
+  const requestUrl = config.url ?? "";
+
+  try {
+    return new URL(requestUrl);
+  } catch {
+    // A relative request needs an explicitly configured or browser-provided base.
+  }
+
+  let baseUrl = config.baseURL;
+  if (baseUrl === undefined) {
+    try {
+      const browserOrigin = (globalThis as typeof globalThis & BrowserGlobal)
+        .location?.origin;
+      if (typeof browserOrigin === "string") baseUrl = browserOrigin;
+    } catch {
+      throw new Error("cannot bind x402-XEC invoice to request URL");
+    }
+  }
+
+  try {
+    return new URL(requestUrl, baseUrl);
+  } catch {
+    throw new Error("cannot bind x402-XEC invoice to request URL");
   }
 }
 
