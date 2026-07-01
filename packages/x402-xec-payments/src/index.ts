@@ -28,6 +28,7 @@ export * from "./chronik-utxo-provider.js";
 export * from "./broadcast-provider.js";
 export * from "./payment-policy.js";
 export * from "./live-payment-orchestrator.js";
+export * from "./browser-wallet-adapter.js";
 
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE" as const;
 

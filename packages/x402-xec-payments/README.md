@@ -81,6 +81,24 @@ payments, and does not create wallet custody. It does not integrate Tonalli
 Wallet, RMZ, or Teyolia. A future Tonalli Wallet integration should supply
 caller-controlled signers and an explicit user-approval UX before any broadcast.
 
+## Browser wallet adapter
+
+`BrowserWalletAdapter` is the future Tonalli Wallet approval and signing
+boundary. It requests public account data, explicit invoice approval,
+authorization signing, and optionally prepared-transaction signing.
+`BrowserWalletApprovalSigningBoundary` enforces approval before signing and has
+no broadcast capability.
+
+`DisabledBrowserWalletAdapter` is the fail-closed default.
+`TestOnlyBrowserWalletAdapter` is deterministic and performs no I/O. Neither is
+wired into Axios or changes the orchestrator or CLI defaults.
+
+The adapter never receives a mnemonic, WIF, private key, or seed phrase.
+Tonalli Wallet retains key ownership and custody; x402-XEC receives only public
+account data, approval results, and signatures. There is no automatic payment
+or default broadcast path. See
+[the browser wallet security boundary](../../docs/browser-wallet-security-boundary.md).
+
 ## UTXO providers
 
 `StaticUtxoProvider` is the deterministic default for tests, fixtures, and the
