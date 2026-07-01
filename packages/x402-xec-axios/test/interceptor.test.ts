@@ -7,6 +7,7 @@ import {
   authorizationSigningMessage,
   canonicalHash,
   computeInvoiceHash,
+  computeResourceHash,
   createInvoice,
   type Invoice,
   type ResourceRequest,
@@ -14,6 +15,8 @@ import {
 import axios, { type AxiosInstance } from "axios";
 import {
   createTestOnlyMockXecSigner,
+  type PaymentOrchestrator,
+  type X402XecPaymentInterceptorOptions,
   withX402XecPaymentInterceptor,
 } from "../src/index.js";
 
@@ -105,6 +108,18 @@ function paymentClient(client: AxiosInstance, maxPaymentSats: bigint = 1_000n): 
       transaction: { txid: TXID, vout: 2 },
     }),
     maxPaymentSats,
+    now: () => NOW,
+  });
+}
+
+function orchestratorClient(
+  client: AxiosInstance,
+  orchestrator: PaymentOrchestrator,
+): AxiosInstance {
+  return withX402XecPaymentInterceptor(client, {
+    orchestrator,
+    enableOrchestratorPayments: true,
+    maxPaymentSats: 1_000n,
     now: () => NOW,
   });
 }
@@ -239,4 +254,140 @@ test("unsupported payment scheme or asset fails", async (t) => {
 
   await assert.rejects(paymentClient(server.client).get(server.url), /unsupported or inconsistent/);
   assert.equal(server.requests.length, 1);
+});
+
+test("payment preparer mode remains available", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  let preparations = 0;
+
+  const client = withX402XecPaymentInterceptor(server.client, {
+    paymentPreparer: {
+      async prepare({ invoice, resource }) {
+        preparations += 1;
+        assert.equal(invoice.resourceHash, computeResourceHash(resource));
+        return { paymentSignature: "offline-preparer-payment" };
+      },
+    },
+    maxPaymentSats: 1_000n,
+    now: () => NOW,
+  });
+
+  const response = await client.get(server.url);
+
+  assert.equal(response.status, 200);
+  assert.equal(preparations, 1);
+  assert.equal(
+    server.requests[1]?.headers["payment-signature"],
+    "offline-preparer-payment",
+  );
+});
+
+test("orchestrator is rejected unless explicitly enabled", () => {
+  let executions = 0;
+  const client = axios.create({ proxy: false });
+
+  assert.throws(
+    () => withX402XecPaymentInterceptor(client, {
+      orchestrator: {
+        async execute() {
+          executions += 1;
+          return { paymentSignature: "must-not-be-used" };
+        },
+      },
+      maxPaymentSats: 1_000n,
+      now: () => NOW,
+    } as unknown as X402XecPaymentInterceptorOptions),
+    /orchestrator payments are disabled.*enableOrchestratorPayments: true/,
+  );
+  assert.equal(executions, 0);
+});
+
+test("enabled orchestrator attaches a mock signature and retries once", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  let executions = 0;
+
+  const response = await orchestratorClient(server.client, {
+    async execute({ invoice, resource }) {
+      executions += 1;
+      assert.equal(invoice.resourceHash, computeResourceHash(resource));
+      return {
+        paymentSignature: "dry-run-orchestrator-payment",
+        broadcasted: false,
+        mode: "dry-run",
+      };
+    },
+  }).get(server.url);
+
+  assert.equal(response.status, 200);
+  assert.equal(executions, 1);
+  assert.equal(server.requests.length, 2);
+  assert.equal(
+    server.requests[1]?.headers["payment-signature"],
+    "dry-run-orchestrator-payment",
+  );
+});
+
+test("orchestrator mode prevents a retry loop", async (t) => {
+  const server = await startServer({ always402: true });
+  t.after(() => server.close());
+  let executions = 0;
+
+  await assert.rejects(orchestratorClient(server.client, {
+    async execute() {
+      executions += 1;
+      return { paymentSignature: "dry-run-orchestrator-payment" };
+    },
+  }).get(server.url), (error: unknown) => {
+    assert.equal(axios.isAxiosError(error) && error.response?.status, 402);
+    return true;
+  });
+
+  assert.equal(executions, 1);
+  assert.equal(server.requests.length, 2);
+});
+
+test("orchestrator errors do not leak secrets", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  const secret = "wallet-secret-do-not-leak";
+
+  await assert.rejects(orchestratorClient(server.client, {
+    async execute() {
+      throw new Error(`provider failed with ${secret}`);
+    },
+  }).get(server.url), (error: unknown) => {
+    assert.equal(error instanceof Error, true);
+    assert.equal((error as Error).message, "x402-XEC orchestrator payment failed");
+    assert.doesNotMatch(String(error), new RegExp(secret));
+    return true;
+  });
+  assert.equal(server.requests.length, 1);
+});
+
+test("broadcasted orchestrator results are rejected without a paid retry", async (t) => {
+  const server = await startServer();
+  t.after(() => server.close());
+  let broadcastCalls = 0;
+  const orchestrator = {
+    async execute() {
+      return {
+        paymentSignature: "must-not-be-attached",
+        broadcasted: true,
+        mode: "live",
+      };
+    },
+    async broadcast() {
+      broadcastCalls += 1;
+    },
+  };
+
+  await assert.rejects(
+    orchestratorClient(server.client, orchestrator).get(server.url),
+    /rejects broadcasted orchestrator payments/,
+  );
+  assert.equal(broadcastCalls, 0);
+  assert.equal(server.requests.length, 1);
+  assert.equal(server.requests[0]?.headers["payment-signature"], undefined);
 });

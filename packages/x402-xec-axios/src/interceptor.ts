@@ -35,12 +35,63 @@ export interface XecSigner extends SignatureProvider {
   };
 }
 
-export interface X402XecPaymentInterceptorOptions {
-  readonly signer: XecSigner;
+export interface PaymentPreparationRequest {
+  readonly invoice: Invoice;
+  readonly resource: ResourceRequest;
+}
+
+export interface PaymentPreparer {
+  prepare(
+    request: PaymentPreparationRequest,
+  ): Promise<{ readonly paymentSignature: string }>;
+}
+
+export interface PaymentOrchestratorResult {
+  readonly paymentSignature: string;
+  readonly broadcasted?: boolean;
+  readonly mode?: string;
+}
+
+/**
+ * Experimental boundary for a caller-supplied, dry-run payment orchestrator.
+ * Axios never receives keys or a broadcast provider.
+ */
+export interface PaymentOrchestrator {
+  execute(
+    request: PaymentPreparationRequest,
+  ): Promise<PaymentOrchestratorResult>;
+}
+
+interface X402XecPaymentInterceptorBaseOptions {
   readonly maxPaymentSats: bigint | number | string;
   /** Test hook. Returns epoch seconds. */
   readonly now?: () => number;
 }
+
+export type X402XecPaymentInterceptorOptions =
+  X402XecPaymentInterceptorBaseOptions & (
+    | {
+      /** Legacy local-only mock signer mode. */
+      readonly signer: XecSigner;
+      readonly paymentPreparer?: never;
+      readonly orchestrator?: never;
+      readonly enableOrchestratorPayments?: never;
+    }
+    | {
+      /** Local-only offline payment preparation mode. */
+      readonly paymentPreparer: PaymentPreparer;
+      readonly signer?: never;
+      readonly orchestrator?: never;
+      readonly enableOrchestratorPayments?: never;
+    }
+    | {
+      /** Experimental dry-run/testing boundary. Disabled unless exactly true. */
+      readonly orchestrator: PaymentOrchestrator;
+      readonly enableOrchestratorPayments: true;
+      readonly signer?: never;
+      readonly paymentPreparer?: never;
+    }
+  );
 
 export interface TestOnlyMockXecSignerOptions {
   readonly payer: string;
@@ -66,6 +117,7 @@ export function withX402XecPaymentInterceptor(
   client: AxiosInstance,
   options: X402XecPaymentInterceptorOptions,
 ): AxiosInstance {
+  validatePaymentMode(options);
   const maxPaymentSats = readMaximum(options.maxPaymentSats);
   const now = options.now ?? (() => Math.floor(Date.now() / 1_000));
 
@@ -86,18 +138,74 @@ export function withX402XecPaymentInterceptor(
       );
     }
 
-    const authorization = await createAuthorization(offer.invoice, options.signer);
-    const paymentEnvelope = encodeBase64UrlJson({
-      invoice: offer.invoice,
-      authorization,
-    });
+    const paymentSignature = await createPaymentSignature(offer, options);
 
     config[RETRY_MARKER] = true;
-    config.headers.set(PAYMENT_HEADER, paymentEnvelope);
+    config.headers.set(PAYMENT_HEADER, paymentSignature);
     return client.request(config);
   });
 
   return client;
+}
+
+function validatePaymentMode(options: X402XecPaymentInterceptorOptions): void {
+  const modes = [
+    options.signer !== undefined,
+    options.paymentPreparer !== undefined,
+    options.orchestrator !== undefined,
+  ].filter(Boolean).length;
+  if (modes !== 1) {
+    throw new TypeError(
+      "configure exactly one of signer, paymentPreparer, or orchestrator",
+    );
+  }
+  if (
+    options.orchestrator !== undefined
+    && options.enableOrchestratorPayments !== true
+  ) {
+    throw new Error(
+      "x402-XEC orchestrator payments are disabled; "
+      + "set enableOrchestratorPayments: true for explicit dry-run/testing use",
+    );
+  }
+}
+
+async function createPaymentSignature(
+  offer: PaymentOffer,
+  options: X402XecPaymentInterceptorOptions,
+): Promise<string> {
+  if (options.orchestrator !== undefined) {
+    let result: PaymentOrchestratorResult;
+    try {
+      result = await options.orchestrator.execute(offer);
+    } catch {
+      throw new Error("x402-XEC orchestrator payment failed");
+    }
+    if (result.broadcasted === true) {
+      throw new Error(
+        "x402-XEC Axios rejects broadcasted orchestrator payments",
+      );
+    }
+    return readPaymentSignature(result.paymentSignature, "orchestrator");
+  }
+
+  if (options.paymentPreparer !== undefined) {
+    const result = await options.paymentPreparer.prepare(offer);
+    return readPaymentSignature(result.paymentSignature, "payment preparer");
+  }
+
+  const authorization = await createAuthorization(offer.invoice, options.signer);
+  return encodeBase64UrlJson({
+    invoice: offer.invoice,
+    authorization,
+  });
+}
+
+function readPaymentSignature(input: unknown, source: string): string {
+  if (typeof input !== "string" || input.length === 0) {
+    throw new TypeError(`${source} must return a non-empty paymentSignature`);
+  }
+  return input;
 }
 
 /**
