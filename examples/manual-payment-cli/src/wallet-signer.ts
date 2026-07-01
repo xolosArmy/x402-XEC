@@ -10,12 +10,16 @@ import {
   P2PKHSignatory,
   shaRmd160,
   signMsg,
-  XEC_TOKEN_AWARE_DERIVATION_PATH,
   type Signatory,
 } from "ecash-lib";
 
-/** Tonalli-compatible first eCash BIP44 receive address. */
-export const TONALLI_ECASH_DERIVATION_PATH = XEC_TOKEN_AWARE_DERIVATION_PATH;
+/** Tonalli Wallet / RMZWallet BIP44 receive and change paths. */
+export const TONALLI_RECEIVE_PATH_PREFIX = "m/44'/899'/0'/0";
+export const TONALLI_CHANGE_PATH_PREFIX = "m/44'/899'/0'/1";
+export const TONALLI_DERIVATION_PATH = "m/44'/899'/0'/0/0";
+
+/** @deprecated Use TONALLI_DERIVATION_PATH. */
+export const TONALLI_ECASH_DERIVATION_PATH = TONALLI_DERIVATION_PATH;
 
 export interface EcashWalletSigner extends SignatureProvider {
   readonly address: string;
@@ -46,7 +50,7 @@ export class EcashMnemonicSigner implements EcashWalletSigner {
     let child: HDKey | undefined;
     try {
       root = HDKey.fromMasterSeed(seed);
-      child = root.derive(TONALLI_ECASH_DERIVATION_PATH);
+      child = root.derive(TONALLI_DERIVATION_PATH);
       const derivedKey = child.privateKey;
       if (derivedKey === null) {
         throw new Error("mnemonic derivation did not produce a private key");

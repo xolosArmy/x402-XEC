@@ -5,10 +5,17 @@ the default: it reads UTXOs from an explicitly configured Chronik endpoint,
 builds and signs a funding transaction in memory, creates the authorization and
 `PAYMENT-SIGNATURE`, prints the payment plan, and never broadcasts.
 
-Tonalli Wallet uses BIP39 mnemonic seed phrases, not WIF, as its wallet model.
-The CLI's `EcashMnemonicSigner` derives the first eCash BIP44 receive address at
-`m/44'/1899'/0'/0/0` and provides both authorization-message and transaction
-signing. The signer does not retain the mnemonic or seed after derivation.
+Tonalli Wallet / RMZWallet uses BIP39 mnemonic seed phrases as its primary
+wallet model. x402-XEC follows its derivation paths:
+
+- mnemonic/default receive address: `m/44'/899'/0'/0/0`
+- receive address N: `m/44'/899'/0'/0/{index}`
+- change address N: `m/44'/899'/0'/1/{index}`
+
+The CLI's `EcashMnemonicSigner` provides both authorization-message and
+transaction signing. The signer does not retain the mnemonic or seed after
+derivation. WIF/private-key input is deprecated, developer-only compatibility
+and is not the Tonalli-compatible primary model.
 
 Never use a primary Tonalli Wallet seed phrase. Use only a dedicated disposable,
 low-value test wallet. The mnemonic is read from

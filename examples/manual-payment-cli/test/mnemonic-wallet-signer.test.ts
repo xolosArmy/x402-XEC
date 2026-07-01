@@ -11,18 +11,22 @@ import {
 } from "../src/cli.js";
 import {
   EcashMnemonicSigner,
-  TONALLI_ECASH_DERIVATION_PATH,
+  TONALLI_CHANGE_PATH_PREFIX,
+  TONALLI_DERIVATION_PATH,
+  TONALLI_RECEIVE_PATH_PREFIX,
 } from "../src/wallet-signer.js";
 
 const MNEMONIC = "abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon abandon about";
-const EXPECTED_ADDRESS = "ecash:qrwzys2q6xq98vwz0kjn6ulu5m6yljr5fyc909kalg";
-const EXPECTED_SIGNATURE = "ILd1kUwqb2HFRRrraEuptQlZZ55NxPlcA8Qkk2D2hvwea5E95ZoqZsd_IgR8LAaJA970XuMEXKNeh40Nd7HT2pc";
+const EXPECTED_ADDRESS = "ecash:qpluxjhhlxfjwsymf9nmctvsdrwzwygadsh2pq0ang";
+const EXPECTED_SIGNATURE = "IKk662siPlk30qd5-e9yL-vGCRPXGy92JV-NLoonddjEfm28XrFZHme4XGnhgVXFb9-2JyasBFoJ2KvNkvyVigw";
 const PAY_TO = Address.p2pkh("11".repeat(20)).toString();
 
 test("mnemonic signer derives Tonalli-compatible first eCash address", () => {
   const signer = new EcashMnemonicSigner(MNEMONIC);
   try {
-    assert.equal(TONALLI_ECASH_DERIVATION_PATH, "m/44'/1899'/0'/0/0");
+    assert.equal(TONALLI_DERIVATION_PATH, "m/44'/899'/0'/0/0");
+    assert.equal(TONALLI_RECEIVE_PATH_PREFIX, "m/44'/899'/0'/0");
+    assert.equal(TONALLI_CHANGE_PATH_PREFIX, "m/44'/899'/0'/1");
     assert.equal(signer.address, EXPECTED_ADDRESS);
   } finally {
     signer.destroy();

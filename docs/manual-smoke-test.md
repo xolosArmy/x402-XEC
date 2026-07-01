@@ -9,10 +9,15 @@ in the local E2E demo. Tonalli Wallet UI, RMZ, and Teyolia remain out of scope.
 > Never commit seed words, a populated `.env`, terminal transcript, WIF, or
 > private key.
 
-Tonalli Wallet uses mnemonic seed phrases, not WIF. The CLI derives the first
-eCash BIP44 receive address at `m/44'/1899'/0'/0/0`. `--wif` and `--private-key`
-are deprecated low-level developer escape hatches, not the Tonalli-compatible
-path.
+Tonalli Wallet / RMZWallet uses mnemonic seed phrases as its primary wallet
+model, and x402-XEC follows the same derivation paths:
+
+- mnemonic/default receive address: `m/44'/899'/0'/0/0`
+- receive address N: `m/44'/899'/0'/0/{index}`
+- change address N: `m/44'/899'/0'/1/{index}`
+
+WIF is not the Tonalli-compatible primary model. `--wif` and `--private-key`
+are deprecated, developer-only compatibility for low-level testing.
 
 ## Preconditions
 
