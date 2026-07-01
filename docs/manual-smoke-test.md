@@ -79,7 +79,9 @@ unset X402_XEC_MNEMONIC_UNSAFE_LOCAL_ONLY
 
 A successful live result contains `"broadcasted": true` and a transaction ID.
 Record only non-secret test metadata. Clear temporary secret material and shell
-state immediately.
+state immediately. Use the
+[manual smoke-test result template](manual-smoke-test-results-template.md) to
+record the controlled dry-run or broadcast result.
 
 ## Guardrails and recovery
 

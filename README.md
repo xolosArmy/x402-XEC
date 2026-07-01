@@ -26,7 +26,8 @@ payments, and must not be used with large amounts.
 The manual CLI remains a developer and testing layer; it is not the wallet user
 experience.
 See the [controlled manual smoke-test guide](docs/manual-smoke-test.md) for the
-required dry-run procedure and live guardrails.
+required dry-run procedure and live guardrails. Record controlled results with
+the [manual smoke-test result template](docs/manual-smoke-test-results-template.md).
 
 The [`@x402-xec/transactions`](packages/x402-xec-transactions/README.md) package
 constructs signed XEC funding transactions offline from caller-provided UTXOs and
