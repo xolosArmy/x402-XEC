@@ -18,6 +18,12 @@ The [`examples/local-e2e`](examples/local-e2e/README.md) demo connects the
 facilitator, Express middleware, and Axios interceptor in one deterministic local
 flow.
 
+The experimental
+[`examples/manual-payment-cli`](examples/manual-payment-cli/README.md) supports
+recommended dry-run payment planning and a dangerous, explicitly gated manual
+broadcast mode. It is not connected to Axios, provides no custody or automatic
+payments, and must not be used with large amounts.
+
 The [`@x402-xec/transactions`](packages/x402-xec-transactions/README.md) package
 constructs signed XEC funding transactions offline from caller-provided UTXOs and
 signatories. It has no network or broadcast capability and holds no keys.

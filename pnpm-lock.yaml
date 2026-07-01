@@ -43,6 +43,21 @@ importers:
         specifier: ^5.0.3
         version: 5.0.6
 
+  examples/manual-payment-cli:
+    dependencies:
+      '@x402-xec/core':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-core
+      '@x402-xec/payments':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-payments
+      '@x402-xec/transactions':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-transactions
+      ecash-lib:
+        specifier: ^4.12.0
+        version: 4.12.0
+
   packages/x402-xec-axios:
     dependencies:
       '@x402-xec/core':
