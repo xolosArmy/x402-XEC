@@ -1,0 +1,31 @@
+{
+  "name": "browser-e2e",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Local browser dry-run demo for the future Tonalli Wallet boundary",
+  "type": "module",
+  "scripts": {
+    "build": "pnpm run build:frontend && tsc -p tsconfig.json",
+    "build:frontend": "esbuild src/browser.ts --bundle --platform=browser --format=iife --alias:node:crypto=./src/browser-crypto-shim.ts --outfile=dist/browser/app.js",
+    "start": "pnpm run build:frontend && tsx src/index.ts",
+    "test": "tsx --test test/**/*.test.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@x402-xec/axios": "workspace:*",
+    "@x402-xec/core": "workspace:*",
+    "@x402-xec/express": "workspace:*",
+    "@x402-xec/facilitator": "workspace:*",
+    "@x402-xec/payments": "workspace:*",
+    "axios": "^1.7.0",
+    "express": "^5.1.0"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.3",
+    "@noble/hashes": "^1.7.1",
+    "esbuild": "^0.28.0"
+  }
+}

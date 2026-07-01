@@ -18,6 +18,40 @@ importers:
         specifier: ^6.0.3
         version: 6.0.3
 
+  examples/browser-e2e:
+    dependencies:
+      '@x402-xec/axios':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-axios
+      '@x402-xec/core':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-core
+      '@x402-xec/express':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-express
+      '@x402-xec/facilitator':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-facilitator
+      '@x402-xec/payments':
+        specifier: workspace:*
+        version: link:../../packages/x402-xec-payments
+      axios:
+        specifier: ^1.7.0
+        version: 1.18.1
+      express:
+        specifier: ^5.1.0
+        version: 5.2.1
+    devDependencies:
+      '@noble/hashes':
+        specifier: ^1.7.1
+        version: 1.8.0
+      '@types/express':
+        specifier: ^5.0.3
+        version: 5.0.6
+      esbuild:
+        specifier: ^0.28.0
+        version: 0.28.1
+
   examples/local-e2e:
     dependencies:
       '@x402-xec/axios':

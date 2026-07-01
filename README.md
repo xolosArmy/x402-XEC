@@ -14,9 +14,13 @@ message-signature verifier, and a transactional in-memory credit ledger. See
 Deterministic Chronik transaction-provider fixtures and their scope are
 documented in [`docs/chronik-fixture-inspection.md`](docs/chronik-fixture-inspection.md).
 
-The [`examples/local-e2e`](examples/local-e2e/README.md) demo connects the
-facilitator, Express middleware, and Axios interceptor in one deterministic local
-flow.
+The workspace examples cover three distinct local workflows:
+
+- [`examples/local-e2e`](examples/local-e2e/README.md) is the local Node demo.
+
+- [`examples/manual-payment-cli`](examples/manual-payment-cli/README.md) is the operator dry-run and controlled smoke-test tool.
+
+- [`examples/browser-e2e`](examples/browser-e2e/README.md) is the fake browser wallet approval demo. It is dry-run only and never broadcasts.
 
 The experimental
 [`examples/manual-payment-cli`](examples/manual-payment-cli/README.md) supports
@@ -49,7 +53,8 @@ for a future Tonalli Wallet approval and signing UI. The wallet retains all key
 material and x402-XEC receives only public account data, decisions, and
 signatures. No Tonalli, RMZ, or Teyolia integration is included. See
 [`docs/browser-wallet-security-boundary.md`](docs/browser-wallet-security-boundary.md).
-Axios live payment remains disabled until an explicit future PR.
+Axios orchestrator payments remain disabled unless the caller supplies an
+orchestrator and sets the explicit testing flag.
 
 The provisional network identifier is `xec:mainnet`. It is isolated as a constant
 so a future standards-based identifier can replace it.
