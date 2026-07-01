@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>x402-XEC Browser Dry Run</title>
+    <style>
+      :root { color-scheme: light dark; font-family: system-ui, sans-serif; }
+      body { max-width: 48rem; margin: 3rem auto; padding: 0 1rem; }
+      button { font: inherit; padding: .65rem 1rem; }
+      pre { min-height: 14rem; padding: 1rem; overflow-wrap: anywhere; white-space: pre-wrap; background: CanvasText; color: Canvas; }
+      .warning { border-left: .3rem solid #d97706; padding-left: 1rem; }
+    </style>
+  </head>
+  <body>
+    <h1>x402-XEC browser wallet demo</h1>
+    <p class="warning">
+      Browser dry-run demo only. Fake Tonalli wallet, no real funds, no key
+      material, no Chronik network access, and no broadcast.
+    </p>
+    <button id="get-weather" type="button">Get Weather</button>
+    <pre id="output" aria-live="polite">Ready. DRY RUN ONLY.</pre>
+    <script src="/assets/app.js"></script>
+  </body>
+</html>
