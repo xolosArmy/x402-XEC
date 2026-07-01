@@ -1,41 +1,53 @@
 # Manual payment CLI
 
-This is an experimental CLI for controlled x402-XEC payment experiments.
-Dry-run is the default and recommended mode. It reads UTXOs from an explicitly
-configured Chronik endpoint, builds and signs a funding transaction in memory,
-creates the authorization and `PAYMENT-SIGNATURE`, prints the payment plan, and
-never broadcasts.
+This experimental CLI supports controlled x402-XEC payment tests. Dry-run is
+the default: it reads UTXOs from an explicitly configured Chronik endpoint,
+builds and signs a funding transaction in memory, creates the authorization and
+`PAYMENT-SIGNATURE`, prints the payment plan, and never broadcasts.
 
-This CLI provides no wallet custody and stores no private keys. A key supplied
-with `--wif` or `--private-key` is used only in the running process. Command-line
-arguments may still be visible in shell history and the operating-system process
-list, so use only isolated local/manual test environments and disposable,
-low-value keys.
+Tonalli Wallet uses BIP39 mnemonic seed phrases, not WIF, as its wallet model.
+The CLI's `EcashMnemonicSigner` derives the first eCash BIP44 receive address at
+`m/44'/1899'/0'/0/0` and provides both authorization-message and transaction
+signing. The signer does not retain the mnemonic or seed after derivation.
+
+Never use a primary Tonalli Wallet seed phrase. Use only a dedicated disposable,
+low-value test wallet. The mnemonic is read from
+`X402_XEC_MNEMONIC_UNSAFE_LOCAL_ONLY`; it is not accepted as a CLI argument and
+is redacted from surfaced errors. Environment variables can still be exposed by
+the host or child processes, so this mechanism is unsafe/local-only. Never
+commit a mnemonic, populated `.env`, terminal transcript, WIF, or private key.
+
+`--wif` and `--private-key` remain deprecated low-level developer escape hatches
+for isolated compatibility tests. CLI arguments may appear in shell history and
+the operating-system process list.
 
 Follow the complete [controlled smoke-test guide](../../docs/manual-smoke-test.md)
-before any live experiment. Always dry-run first, use tiny amounts and a
-dedicated wallet, never paste a primary wallet WIF, never commit secrets, and
-remember that broadcast is irreversible.
+before any live experiment.
 
 ## Dry-run
 
+Capture the disposable test mnemonic without putting it in the command line:
+
 ```sh
+read -rsp 'Disposable test wallet mnemonic: ' X402_XEC_MNEMONIC_UNSAFE_LOCAL_ONLY
+export X402_XEC_MNEMONIC_UNSAFE_LOCAL_ONLY
+printf '\n'
+
 pnpm --filter manual-payment-cli start -- dry-run \
   --chronik-url https://your-explicit-chronik.example \
-  --from-address ecash:... \
-  --wif ... \
   --pay-to ecash:... \
   --amount-sats 100
+
+unset X402_XEC_MNEMONIC_UNSAFE_LOCAL_ONLY
 ```
 
-The `dry-run` positional argument may be omitted. `--private-key` accepts exactly
-32 bytes of hex as a local-testing alternative to a compressed mainnet WIF.
-Neither key form is written to output.
+The `dry-run` positional argument may be omitted. `--from-address` is optional;
+when supplied, it must match the address derived by the signer.
 
 ## Broadcast
 
-Broadcast mode is dangerous: it creates a real, irreversible XEC transaction.
-Do not use large amounts. It will run only when every broadcast gate is present:
+Broadcast mode is dangerous and irreversible. Use a tiny amount and only a
+wallet created for this test. It runs only when every broadcast gate is present:
 
 ```sh
 pnpm --filter manual-payment-cli start -- broadcast \
@@ -43,19 +55,17 @@ pnpm --filter manual-payment-cli start -- broadcast \
   --yes-i-understand-this-broadcasts-xec \
   --confirmation-phrase 'I UNDERSTAND THIS BROADCASTS XEC' \
   --chronik-url https://your-explicit-chronik.example \
-  --from-address ecash:... \
-  --wif ... \
   --max-payment-sats 100 \
   --pay-to ecash:... \
   --amount-sats 100
 ```
 
-The CLI applies `PaymentPolicy`, crosses an explicit `ApprovalProvider`
-boundary, and then uses `ChronikTxBroadcaster`. Missing gates fail closed.
-Broadcast amounts above the independent conservative default of 1,000 sats are
-refused unless `--override-conservative-limit` is also supplied. The override
-does not replace the required `--max-payment-sats` policy limit.
+The mnemonic environment variable must already be exported as shown for the
+dry-run and must be unset immediately afterward. The CLI applies
+`PaymentPolicy`, crosses an explicit `ApprovalProvider` boundary, and then uses
+`ChronikTxBroadcaster`. Missing gates fail closed. Amounts above the independent
+1,000-sat default are refused unless `--override-conservative-limit` is supplied;
+the override does not replace `--max-payment-sats`.
 
-There are no automatic payments, and this CLI is not connected to the Axios
-interceptor. It is not a wallet and does not custody funds or persist secrets.
-Tonalli Wallet approval UX comes later; RMZ and Teyolia are not integrated.
+Axios live payments remain disabled. This CLI is not Tonalli Wallet UI and does
+not provide wallet custody. Tonalli UI, RMZ, and Teyolia are not integrated.

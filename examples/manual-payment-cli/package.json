@@ -13,8 +13,12 @@
     "test": "tsx --test test/**/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
+    "@scure/bip32": "^1.7.0",
+    "@scure/bip39": "^1.6.0",
     "@x402-xec/core": "workspace:*",
     "@x402-xec/payments": "workspace:*",
     "@x402-xec/transactions": "workspace:*",

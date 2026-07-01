@@ -2,7 +2,6 @@ import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
   createInvoice,
   type ResourceRequest,
-  type SignatureProvider,
 } from "@x402-xec/core";
 import {
   ChronikTxBroadcaster,
@@ -15,14 +14,12 @@ import {
   type PaymentPlan,
   type UtxoProvider,
 } from "@x402-xec/payments";
+import { Address } from "ecash-lib";
 import {
-  Address,
-  ALL_BIP143,
-  Ecc,
-  P2PKHSignatory,
-  shaRmd160,
-  signMsg,
-} from "ecash-lib";
+  EcashMnemonicSigner,
+  EcashPrivateKeySigner,
+  type EcashWalletSigner,
+} from "./wallet-signer.js";
 
 export type CliMode = "dry-run" | "broadcast";
 
@@ -47,6 +44,7 @@ export interface ManualPaymentCliDependencies {
   readonly approvalProvider?: ApprovalProvider;
   readonly now?: () => number;
   readonly log?: (line: string) => void;
+  readonly env?: Readonly<Record<string, string | undefined>>;
 }
 
 const RESOURCE: ResourceRequest = {
@@ -59,6 +57,7 @@ const RESOURCE: ResourceRequest = {
 
 export const BROADCAST_CONFIRMATION_PHRASE = "I UNDERSTAND THIS BROADCASTS XEC";
 export const DEFAULT_MAX_BROADCAST_SATS = 1_000n;
+export const MNEMONIC_ENV = "X402_XEC_MNEMONIC_UNSAFE_LOCAL_ONLY";
 
 const BOOLEAN_FLAGS = new Map<string, keyof ParsedCliOptions>([
   ["--allow-broadcast", "allowBroadcast"],
@@ -132,21 +131,19 @@ export async function runManualPaymentCli(
   argv: readonly string[],
   dependencies: ManualPaymentCliDependencies = {},
 ): Promise<LivePaymentResult> {
-  const suppliedSecrets = collectSuppliedSecrets(argv);
-  let secretKey: Uint8Array | undefined;
+  const env = dependencies.env ?? process.env;
+  const mnemonic = env[MNEMONIC_ENV];
+  const suppliedSecrets = [
+    ...collectSuppliedSecrets(argv),
+    ...(mnemonic === undefined ? [] : [mnemonic]),
+  ];
+  let signer: EcashWalletSigner | undefined;
 
   try {
     const options = parseCliArgs(argv);
-    const required = requiredExecutionOptions(options, dependencies);
-    const loadedSecretKey = readSecretKey(options);
-    secretKey = loadedSecretKey;
-    const ecc = new Ecc();
-    if (!ecc.isValidSeckey(loadedSecretKey)) {
-      throw new CliUsageError("private key is not a valid secp256k1 key");
-    }
-    const publicKey = ecc.derivePubkey(loadedSecretKey);
-    const derivedAddress = Address.p2pkh(shaRmd160(publicKey)).toString();
-    if (derivedAddress !== required.fromAddress) {
+    signer = createWalletSigner(options, mnemonic);
+    const required = requiredExecutionOptions(options, dependencies, signer.address);
+    if (options.fromAddress !== undefined && signer.address !== required.fromAddress) {
       throw new CliUsageError("--from-address does not match the supplied signing key");
     }
 
@@ -173,20 +170,12 @@ export async function runManualPaymentCli(
         options.confirmation
         && options.confirmationPhrase === BROADCAST_CONFIRMATION_PHRASE,
       );
-    const signatureProvider: SignatureProvider = {
-      sign(message) {
-        return signMsg(message, loadedSecretKey)
-          .replaceAll("+", "-")
-          .replaceAll("/", "_")
-          .replace(/=+$/, "");
-      },
-    };
     const orchestrator = new LivePaymentOrchestrator({
       utxoProvider,
-      signatureProvider,
+      signatureProvider: signer,
       payer: required.fromAddress,
       changeAddress: required.fromAddress,
-      signatoryForUtxo: () => P2PKHSignatory(loadedSecretKey, publicKey, ALL_BIP143),
+      signatoryForUtxo: (utxo) => signer!.signatoryForUtxo(utxo),
       dryRun,
       allowBroadcast: options.allowBroadcast,
       paymentPolicy: {
@@ -206,7 +195,7 @@ export async function runManualPaymentCli(
   } catch (error) {
     throw sanitizeError(error, suppliedSecrets);
   } finally {
-    secretKey?.fill(0);
+    signer?.destroy();
   }
 }
 
@@ -244,8 +233,9 @@ interface RequiredExecutionOptions {
 function requiredExecutionOptions(
   options: ParsedCliOptions,
   dependencies: ManualPaymentCliDependencies,
+  derivedAddress: string,
 ): RequiredExecutionOptions {
-  const fromAddress = requireValue(options.fromAddress, "--from-address");
+  const fromAddress = options.fromAddress ?? derivedAddress;
   const payTo = requireValue(options.payTo, "--pay-to");
   const amountSats = canonicalPositiveSats(
     requireValue(options.amountSats, "--amount-sats"),
@@ -299,30 +289,45 @@ function validateModeGates(options: ParsedCliOptions): void {
   }
   for (const [value, flag] of [
     [options.chronikUrl, "--chronik-url"],
-    [options.fromAddress, "--from-address"],
     [options.payTo, "--pay-to"],
     [options.amountSats, "--amount-sats"],
   ] as const) {
     requireValue(value, flag);
   }
-  if (options.wif === undefined && options.privateKey === undefined) {
-    throw new CliUsageError(
-      "broadcast mode requires exactly one of --wif or --private-key",
-    );
-  }
 }
 
-function readSecretKey(options: ParsedCliOptions): Uint8Array {
-  if (options.wif === undefined && options.privateKey === undefined) {
-    throw new CliUsageError("payment preparation requires --wif or --private-key");
+function createWalletSigner(
+  options: ParsedCliOptions,
+  mnemonic: string | undefined,
+): EcashWalletSigner {
+  const hasLegacyKey = options.wif !== undefined || options.privateKey !== undefined;
+  if (mnemonic !== undefined && hasLegacyKey) {
+    throw new CliUsageError(
+      MNEMONIC_ENV + " cannot be combined with deprecated --wif or --private-key",
+    );
   }
+  if (mnemonic !== undefined) return new EcashMnemonicSigner(mnemonic);
+  if (!hasLegacyKey) {
+    throw new CliUsageError(
+      "payment preparation requires " + MNEMONIC_ENV + "; "
+      + "deprecated --wif/--private-key are local-only compatibility options",
+    );
+  }
+
+  let secretKey: Uint8Array;
   if (options.privateKey !== undefined) {
     if (!/^[0-9a-fA-F]{64}$/.test(options.privateKey)) {
       throw new CliUsageError("--private-key must be exactly 32 bytes of hex");
     }
-    return Uint8Array.from(Buffer.from(options.privateKey, "hex"));
+    secretKey = Uint8Array.from(Buffer.from(options.privateKey, "hex"));
+  } else {
+    secretKey = decodeCompressedMainnetWif(options.wif!);
   }
-  return decodeCompressedMainnetWif(options.wif!);
+  try {
+    return new EcashPrivateKeySigner(secretKey);
+  } finally {
+    secretKey.fill(0);
+  }
 }
 
 function decodeCompressedMainnetWif(wif: string): Uint8Array {
