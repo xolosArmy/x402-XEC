@@ -18,13 +18,15 @@ request.headers.set("PAYMENT-SIGNATURE", result.paymentSignature);
 
 `LivePaymentOrchestrator` composes a `UtxoProvider`, the offline funding
 transaction builder, caller-controlled transaction signatories, a message-only
-`SignatureProvider`, and a `BroadcastProvider`. Despite its name, it defaults to
+`SignatureProvider`, a `PaymentPolicy`, an `ApprovalProvider`, and a `BroadcastProvider`. Despite its name, it
+defaults to
 `dryRun: true`; dry-run is the recommended mode.
 
 In dry-run mode, `execute()` reads configured UTXOs, builds the signed funding
 transaction, signs the authorization, and returns `rawTxHex`, the funding
 outpoint, authorization, `PAYMENT-SIGNATURE` value, and planned broadcast
-metadata. It never calls `broadcastTx`, even if a broadcaster was provided.
+metadata. It never calls the approval provider or `broadcastTx`, even if those providers were supplied. The result
+reports that live execution requires approval.
 
 ```ts
 const orchestrator = new LivePaymentOrchestrator({
@@ -48,19 +50,31 @@ const orchestrator = new LivePaymentOrchestrator({
   utxoProvider,
   signatureProvider,
   broadcastProvider, // must not be DisabledBroadcastProvider
+  approvalProvider, // DisabledApprovalProvider is the default
+  paymentPolicy: {
+    maxPaymentSats: 10_000n,
+    maxFeeSats: 500n,
+    allowedNetworks: ["xec:mainnet"],
+    allowedSchemes: ["exact"],
+    requireManualApproval: true,
+  },
   payer,
   changeAddress,
   signatoryForUtxo,
   dryRun: false,
   allowBroadcast: true,
-  maxPaymentSats: 10_000n,
 });
 ```
 
 Before broadcasting, the orchestrator validates invoice expiry and resource
-binding, enforces `invoice.amountSats <= maxPaymentSats`, rejects insufficient or
-token-bearing UTXOs, builds and signs the payment, and generates the envelope.
-Failure at any stage prevents the broadcaster call.
+binding; evaluates amount, network, scheme, optional payTo allowlist, fee, expiry,
+and execution-mode policy; builds and signs the payment; and requests an approved
+`ApprovalDecision`. Failure at any stage prevents the broadcaster call.
+
+`DisabledApprovalProvider` is the default and always rejects live approval.
+`TestOnlyApprovalProvider` returns a configured decision for deterministic tests
+only. A future Tonalli Wallet integration can implement `ApprovalProvider` as its
+user-approval UX while keeping signing material and custody outside this package.
 
 This API is not wired into `@x402-xec/axios`, does not enable automatic mainnet
 payments, and does not create wallet custody. It does not integrate Tonalli

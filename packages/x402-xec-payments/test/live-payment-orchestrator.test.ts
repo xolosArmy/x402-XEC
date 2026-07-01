@@ -20,11 +20,14 @@ import {
   shaRmd160,
 } from "ecash-lib";
 import {
+  DisabledApprovalProvider,
   DisabledBroadcastProvider,
   LivePaymentOrchestrator,
   StaticUtxoProvider,
+  TestOnlyApprovalProvider,
   TestOnlyMockBroadcastProvider,
   type LivePaymentOrchestratorConfig,
+  type PaymentPolicy,
 } from "../src/index.js";
 
 const NOW = 1_800_000_000;
@@ -45,6 +48,16 @@ const RESOURCE: ResourceRequest = {
   query: [["units", "metric"]],
   body: { city: "Mexico City" },
 };
+
+function policy(overrides: Partial<PaymentPolicy> = {}): PaymentPolicy {
+  return {
+    maxPaymentSats: 2_000n,
+    allowedNetworks: ["xec:mainnet"],
+    allowedSchemes: ["exact"],
+    requireManualApproval: true,
+    ...overrides,
+  };
+}
 
 class DeterministicSignatureProvider implements SignatureProvider {
   readonly messages: string[] = [];
@@ -91,6 +104,7 @@ function config(
       P2PKHSignatory(SECRET_KEY, PUBLIC_KEY, ALL_BIP143)
     ),
     now: () => NOW,
+    paymentPolicy: policy(),
     ...overrides,
   };
 }
@@ -120,6 +134,8 @@ test("dry-run is default, composes the builder, and never broadcasts", async () 
 
     assert.equal(result.dryRun, true);
     assert.equal(result.broadcasted, false);
+    assert.equal(result.requiresApproval, true);
+    assert.equal(result.requiresManualApproval, true);
     assert.equal(builderCalls, 1);
     assert.deepEqual(broadcaster.broadcasts, []);
   } finally {
@@ -154,7 +170,6 @@ test("DisabledBroadcastProvider prevents live broadcast", () => {
     () => new LivePaymentOrchestrator(config({
       dryRun: false,
       allowBroadcast: true,
-      maxPaymentSats: 2_000n,
       broadcastProvider: new DisabledBroadcastProvider(),
     })),
     /explicit non-disabled BroadcastProvider/,
@@ -165,7 +180,6 @@ test("live mode requires allowBroadcast true", () => {
   assert.throws(
     () => new LivePaymentOrchestrator(config({
       dryRun: false,
-      maxPaymentSats: 2_000n,
       broadcastProvider: new TestOnlyMockBroadcastProvider("ab".repeat(32)),
     })),
     /requires allowBroadcast: true/,
@@ -177,21 +191,25 @@ test("live mode requires an explicit non-disabled broadcaster", () => {
     () => new LivePaymentOrchestrator(config({
       dryRun: false,
       allowBroadcast: true,
-      maxPaymentSats: 2_000n,
     })),
     /explicit non-disabled BroadcastProvider/,
   );
 });
 
-test("live mode requires maxPaymentSats", () => {
-  assert.throws(
-    () => new LivePaymentOrchestrator(config({
-      dryRun: false,
-      allowBroadcast: true,
-      broadcastProvider: new TestOnlyMockBroadcastProvider("ab".repeat(32)),
-    })),
-    /requires maxPaymentSats/,
+test("live mode fails with the default DisabledApprovalProvider", async () => {
+  const broadcaster = new TestOnlyMockBroadcastProvider("ab".repeat(32));
+  const orchestrator = new LivePaymentOrchestrator(config({
+    dryRun: false,
+    allowBroadcast: true,
+    broadcastProvider: broadcaster,
+    approvalProvider: new DisabledApprovalProvider(),
+  }));
+
+  await assert.rejects(
+    orchestrator.execute(request()),
+    new RegExp("approval is disabled", "i"),
   );
+  assert.deepEqual(broadcaster.broadcasts, []);
 });
 
 test("amount above maxPaymentSats fails without broadcasting", async () => {
@@ -199,7 +217,7 @@ test("amount above maxPaymentSats fails without broadcasting", async () => {
   const orchestrator = new LivePaymentOrchestrator(config({
     dryRun: false,
     allowBroadcast: true,
-    maxPaymentSats: 999n,
+    paymentPolicy: policy({ maxPaymentSats: 999n }),
     broadcastProvider: broadcaster,
   }));
 
@@ -256,13 +274,38 @@ test("token UTXOs fail without broadcasting", async () => {
   assert.deepEqual(broadcaster.broadcasts, []);
 });
 
+test("manual approval rejection prevents live broadcast", async () => {
+  const broadcaster = new TestOnlyMockBroadcastProvider("ab".repeat(32));
+  const approval = new TestOnlyApprovalProvider({
+    approved: false,
+    reason: "user rejected payment",
+  });
+  const orchestrator = new LivePaymentOrchestrator(config({
+    dryRun: false,
+    allowBroadcast: true,
+    broadcastProvider: broadcaster,
+    approvalProvider: approval,
+  }));
+
+  await assert.rejects(
+    orchestrator.execute(request()),
+    new RegExp("user rejected payment"),
+  );
+  assert.equal(approval.plans.length, 1);
+  assert.deepEqual(broadcaster.broadcasts, []);
+});
+
 test("mock broadcaster is called only in fully enabled live mode", async () => {
   const broadcaster = new TestOnlyMockBroadcastProvider("ab".repeat(32));
   const orchestrator = new LivePaymentOrchestrator(config({
     dryRun: false,
     allowBroadcast: true,
-    maxPaymentSats: 2_000n,
     broadcastProvider: broadcaster,
+    approvalProvider: new TestOnlyApprovalProvider({
+      approved: true,
+      approvedAt: NOW,
+      approver: "test-suite",
+    }),
   }));
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (() => {

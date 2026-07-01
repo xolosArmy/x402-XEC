@@ -1,5 +1,4 @@
 import {
-  invoiceSchema,
   type Authorization,
   type Invoice,
   type ResourceRequest,
@@ -18,12 +17,25 @@ import {
   type PreparedPaymentEnvelope,
   type UtxoProvider,
 } from "./index.js";
+import {
+  DisabledApprovalProvider,
+  PaymentApprovalError,
+  evaluatePaymentPolicy,
+  type ApprovalDecision,
+  type ApprovalProvider,
+  type PaymentPlan,
+  type PaymentPolicy,
+} from "./payment-policy.js";
 
 export interface LivePaymentOrchestratorConfig {
   readonly utxoProvider: UtxoProvider;
   readonly transactionBuilder?: FundingTransactionBuilder;
   readonly signatureProvider: SignatureProvider;
   readonly broadcastProvider?: BroadcastProvider;
+  /** Safe default. DisabledApprovalProvider rejects every live payment. */
+  readonly approvalProvider?: ApprovalProvider;
+  /** Required for live mode and evaluated before approval or broadcast. */
+  readonly paymentPolicy?: PaymentPolicy;
   readonly payer: string;
   readonly changeAddress: string;
   readonly signatoryForUtxo: (utxo: FundingUtxo) => Signatory;
@@ -31,7 +43,7 @@ export interface LivePaymentOrchestratorConfig {
   readonly dryRun?: boolean;
   /** Must be exactly true in live mode. It has no effect in dry-run mode. */
   readonly allowBroadcast?: boolean;
-  /** Required in live mode. Optional additional guard in dry-run mode. */
+  /** @deprecated Prefer paymentPolicy.maxPaymentSats. Dry-run compatibility only. */
   readonly maxPaymentSats?: bigint | number | string;
   readonly feePerKb?: string;
   readonly dustSats?: string;
@@ -66,30 +78,38 @@ interface LivePaymentResultBase {
 export interface DryRunPaymentResult extends LivePaymentResultBase {
   readonly dryRun: true;
   readonly broadcasted: false;
+  /** A live execution of this plan always crosses the approval boundary. */
+  readonly requiresApproval: true;
+  readonly requiresManualApproval: boolean;
 }
 
 export interface BroadcastedPaymentResult extends LivePaymentResultBase {
   readonly dryRun: false;
   readonly broadcasted: true;
   readonly broadcastResult: BroadcastResult;
+  readonly approvalDecision: ApprovalDecision;
 }
 
 export type LivePaymentResult = DryRunPaymentResult | BroadcastedPaymentResult;
 
 /**
  * Composes UTXO discovery, transaction construction, authorization signing,
- * and an explicitly gated broadcast boundary. Dry-run mode is the default.
+ * policy evaluation, approval, and an explicitly gated broadcast boundary.
+ * Dry-run mode is the default.
  */
 export class LivePaymentOrchestrator {
   readonly #config: LivePaymentOrchestratorConfig;
   readonly #dryRun: boolean;
   readonly #broadcastProvider: BroadcastProvider;
+  readonly #approvalProvider: ApprovalProvider;
 
   constructor(config: LivePaymentOrchestratorConfig) {
     this.#config = { ...config };
     this.#dryRun = config.dryRun ?? true;
     this.#broadcastProvider = config.broadcastProvider
       ?? new DisabledBroadcastProvider();
+    this.#approvalProvider = config.approvalProvider
+      ?? new DisabledApprovalProvider();
 
     if (!this.#dryRun) {
       if (config.allowBroadcast !== true) {
@@ -103,21 +123,41 @@ export class LivePaymentOrchestrator {
           "live payment broadcast requires an explicit non-disabled BroadcastProvider",
         );
       }
-      if (config.maxPaymentSats === undefined) {
-        throw new Error("live payment broadcast requires maxPaymentSats");
+      if (config.paymentPolicy === undefined) {
+        throw new Error("live payment broadcast requires paymentPolicy");
       }
     }
   }
 
   async execute(request: LivePaymentRequest): Promise<LivePaymentResult> {
+    const now = checkedNow(this.#config.now?.()
+      ?? Math.floor(Date.now() / 1_000));
+    const untrustedInvoice = request.invoice as unknown as Record<string, unknown>;
+    const policy = this.#config.paymentPolicy ?? dryRunPolicy(
+      request.invoice,
+      this.#config.maxPaymentSats,
+    );
+    const initialPlan: PaymentPlan = {
+      network: String(untrustedInvoice.network),
+      scheme: String(untrustedInvoice.scheme),
+      amountSats: String(untrustedInvoice.amountSats),
+      payTo: String(untrustedInvoice.payTo),
+      expiresAt: Number(untrustedInvoice.expiresAt),
+      requiresManualApproval: policy.requireManualApproval,
+    };
+    evaluatePaymentPolicy(policy, initialPlan, {
+      dryRun: this.#dryRun,
+      allowBroadcast: this.#config.allowBroadcast === true,
+      now,
+    });
+
     const preparer = new OfflinePaymentPreparer({
       utxoProvider: this.#config.utxoProvider,
       signatureProvider: this.#config.signatureProvider,
       payer: this.#config.payer,
       changeAddress: this.#config.changeAddress,
       signatoryForUtxo: this.#config.signatoryForUtxo,
-      maxPaymentSats: this.#config.maxPaymentSats
-        ?? invoiceSchema.parse(request.invoice).amountSats,
+      maxPaymentSats: policy.maxPaymentSats,
       ...(this.#config.transactionBuilder === undefined
         ? {}
         : { transactionBuilder: this.#config.transactionBuilder }),
@@ -127,7 +167,7 @@ export class LivePaymentOrchestrator {
       ...(this.#config.dustSats === undefined
         ? {}
         : { dustSats: this.#config.dustSats }),
-      ...(this.#config.now === undefined ? {} : { now: this.#config.now }),
+      now: () => now,
     });
     const prepared = await preparer.prepare(request);
     const plannedBroadcast: PlannedBroadcastMetadata = {
@@ -146,9 +186,35 @@ export class LivePaymentOrchestrator {
       fundingTransaction: prepared.fundingTransaction,
       plannedBroadcast,
     };
+    const approvalPlan: PaymentPlan = {
+      ...initialPlan,
+      feeSats: prepared.fundingTransaction.feeSats,
+      transactionTxid: prepared.fundingTransaction.txid,
+    };
+    evaluatePaymentPolicy(policy, approvalPlan, {
+      dryRun: this.#dryRun,
+      allowBroadcast: this.#config.allowBroadcast === true,
+      now,
+    });
 
     if (this.#dryRun) {
-      return { ...base, dryRun: true, broadcasted: false };
+      return {
+        ...base,
+        dryRun: true,
+        broadcasted: false,
+        requiresApproval: true,
+        requiresManualApproval: policy.requireManualApproval,
+      };
+    }
+
+    const approvalDecision = await this.#approvalProvider.approvePayment(
+      approvalPlan,
+    );
+    if (typeof approvalDecision?.approved !== "boolean") {
+      throw new TypeError("ApprovalProvider must return an ApprovalDecision");
+    }
+    if (!approvalDecision.approved) {
+      throw new PaymentApprovalError(approvalDecision.reason);
     }
 
     const broadcastResult = await this.#broadcastProvider.broadcastTx(
@@ -159,6 +225,26 @@ export class LivePaymentOrchestrator {
       dryRun: false,
       broadcasted: true,
       broadcastResult,
+      approvalDecision,
     };
   }
+}
+
+function dryRunPolicy(
+  invoice: Invoice,
+  maxPaymentSats: bigint | number | string | undefined,
+): PaymentPolicy {
+  return {
+    maxPaymentSats: maxPaymentSats ?? invoice.amountSats,
+    allowedNetworks: [invoice.network],
+    allowedSchemes: [invoice.scheme],
+    requireManualApproval: true,
+  };
+}
+
+function checkedNow(value: number): number {
+  if (!Number.isSafeInteger(value) || value < 0) {
+    throw new RangeError("now must return non-negative epoch seconds");
+  }
+  return value;
 }

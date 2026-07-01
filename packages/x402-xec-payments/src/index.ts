@@ -26,6 +26,7 @@ import type { Signatory } from "ecash-lib";
 
 export * from "./chronik-utxo-provider.js";
 export * from "./broadcast-provider.js";
+export * from "./payment-policy.js";
 export * from "./live-payment-orchestrator.js";
 
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE" as const;
