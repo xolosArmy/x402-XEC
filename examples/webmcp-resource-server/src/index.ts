@@ -1,18 +1,17 @@
 import { createServer } from "node:http";
+import { resolveGateH2ARuntimeConfig } from "./config.js";
 import {
   createGateH2AHandler,
-  DEFAULT_HOST,
-  DEFAULT_PORT,
-  DEFAULT_PUBLIC_ORIGIN,
   RESOURCE_PATH,
 } from "./server.js";
 
-const publicOrigin = process.env.H2A_PUBLIC_ORIGIN ?? DEFAULT_PUBLIC_ORIGIN;
+const { host, port, publicOrigin } = resolveGateH2ARuntimeConfig(process.env);
 const { handler, canonicalResourceUrl } = createGateH2AHandler({ publicOrigin });
 const server = createServer(handler);
 
-server.listen(DEFAULT_PORT, DEFAULT_HOST, () => {
-  console.log(`Gate H2A listening at ${canonicalResourceUrl}`);
+server.listen(port, host, () => {
+  console.log(`Gate H2A listening on ${host}:${port}`);
+  console.log(`Canonical resource URL: ${canonicalResourceUrl}`);
   console.log(`GET ${RESOURCE_PATH} always returns HTTP 402 in this gate.`);
 });
 

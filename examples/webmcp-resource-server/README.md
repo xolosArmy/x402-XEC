@@ -34,8 +34,6 @@ pnpm --filter webmcp-resource-server start
 ```
 
 The server listens on `127.0.0.1:4020`.
-Set `H2A_PUBLIC_ORIGIN` to the externally visible origin when deploying so the
-advertised resource URL remains canonical.
 
 ```sh
 curl -i http://127.0.0.1:4020/health
@@ -47,6 +45,28 @@ curl -i \
 
 The second response is always HTTP 402 and includes a base64-encoded JSON
 object in the `PAYMENT-REQUIRED` response header.
+
+## Container and platform configuration
+
+Gate H2A is not deployed by this example. A future container or platform
+deployment can configure its bind address independently from its canonical
+public origin:
+
+```sh
+H2A_HOST=0.0.0.0 \
+PORT=<platform-assigned> \
+H2A_PUBLIC_ORIGIN=https://<public-origin> \
+pnpm --filter webmcp-resource-server start
+```
+
+The listen port resolves in this order: `H2A_PORT`, then `PORT`, then the local
+default `4020`. An explicitly supplied malformed or out-of-range port stops
+startup instead of falling back. `H2A_HOST` defaults to `127.0.0.1`.
+
+`H2A_PUBLIC_ORIGIN` controls only the canonical URL advertised in
+`PAYMENT-REQUIRED`. Bind host and port overrides never alter that value or
+derive a replacement canonical URL. When it is unset, the canonical local
+default remains `http://127.0.0.1:4020`.
 
 ## Validate
 

@@ -8,13 +8,17 @@ import {
   encodePaymentRequired,
   type ExperimentalPaymentRequired,
 } from "./payment-required.js";
+import { DEFAULT_PUBLIC_ORIGIN } from "./config.js";
+
+export {
+  DEFAULT_HOST,
+  DEFAULT_PORT,
+  DEFAULT_PUBLIC_ORIGIN,
+} from "./config.js";
 
 export const GATE = "H2A";
 export const HEALTH_PATH = "/health";
 export const RESOURCE_PATH = "/v1/resource/demo";
-export const DEFAULT_HOST = "127.0.0.1";
-export const DEFAULT_PORT = 4020;
-export const DEFAULT_PUBLIC_ORIGIN = `http://${DEFAULT_HOST}:${DEFAULT_PORT}`;
 export const ALLOWED_ORIGIN = "https://x402.ecash.mx";
 export const PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
 export const PAYMENT_SIGNATURE_HEADER = "PAYMENT-SIGNATURE";
