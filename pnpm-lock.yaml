@@ -101,6 +101,8 @@ importers:
         specifier: ^4.12.0
         version: 4.12.0
 
+  examples/webmcp-resource-server: {}
+
   packages/x402-xec-axios:
     dependencies:
       '@x402-xec/core':
