@@ -3,3 +3,6 @@ packages:
   - examples/*
 
 linkWorkspacePackages: true
+
+onlyBuiltDependencies:
+  - "@xolosarmy/tonalli-core"
