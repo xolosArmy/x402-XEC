@@ -191,6 +191,11 @@ export function createX402SettlementMiddleware(
         "Production real-funds middleware requires a watch-only payToAllocator for unique per-invoice on-chain binding (P0). Static payTo is strictly prohibited in production.",
       );
     }
+    if (config.addressToScript !== undefined) {
+      throw new TypeError(
+        "Production real-funds middleware strictly prohibits custom addressToScript converters. Custom addressToScript hooks are permitted only in test or development mode with allowInsecureDevelopmentMode: true.",
+      );
+    }
   }
 
   if (!config.payToAllocator && !config.payTo) {

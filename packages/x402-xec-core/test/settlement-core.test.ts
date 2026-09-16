@@ -181,3 +181,136 @@ test("verifySettlementProof rejects unconfirmed non-final transactions", async (
   const record = await store.getByInvoiceHash(invoiceHash);
   assert.equal(record?.state, "ISSUED");
 });
+
+test("Pass 2.3 P1-1: direct verifySettlementProof fails closed on malformed checksum payTo before custom addressToScript can run", async () => {
+  const store = new InMemoryAuthoritativeInvoiceStore();
+  const invoiceHash = "cc".repeat(32);
+  const txid = "55".repeat(32);
+  const malformedPayTo = "ecash:qp3wjpa3tjlj042z2wv7hah0ldgwhwy0rq9sywjpy5"; // invalid checksum
+
+  // Issue invoice with malformed checksum payTo
+  await store.issue({
+    invoiceHash,
+    nonce: "test_nonce_malformed_payto",
+    resourceHash: "11".repeat(32),
+    amountSats: 1000n,
+    payTo: malformedPayTo,
+    network: "xec:mainnet",
+    scheme: "exact",
+    issuedAt: 1000,
+    expiresAt: 2000,
+    state: "ISSUED",
+  });
+
+  const { verifySettlementProof } = await import("../src/settlement-verifier.js");
+
+  let customConverterCalled = false;
+  const mockCustomConverter = (_addr: string) => {
+    customConverterCalled = true;
+    return "76a914111111111111111111111111111111111111111188ac";
+  };
+
+  const tx = {
+    txid,
+    outputs: [
+      {
+        sats: 1000n,
+        outputScript: "76a914111111111111111111111111111111111111111188ac",
+      },
+    ],
+    isFinal: true,
+    timeFirstSeen: 1050,
+  };
+
+  const res = await verifySettlementProof({
+    proof: {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash,
+      txid,
+    },
+    store,
+    txProvider: {
+      getTx: async () => tx as any,
+    },
+    addressToScript: mockCustomConverter,
+    now: () => 1100,
+  });
+
+  // Must fail closed
+  assert.equal(res.ok, false);
+  assert.equal(res.code, "PAY_TO_MISMATCH");
+  // Custom converter must NEVER have been called
+  assert.equal(customConverterCalled, false);
+
+  // Authoritative state must still be ISSUED: no commitPaid, no PAID mutation, no unlock
+  const record = await store.getByInvoiceHash(invoiceHash);
+  assert.equal(record?.state, "ISSUED");
+  assert.equal(record?.settledTxid ?? null, null);
+});
+
+test("Pass 2.3 P1-2: direct verifySettlementProof executes custom converter only after canonical CashAddr validation succeeds", async () => {
+  const store = new InMemoryAuthoritativeInvoiceStore();
+  const invoiceHash = "dd".repeat(32);
+  const txid = "66".repeat(32);
+  const validPayTo = "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w";
+
+  await store.issue({
+    invoiceHash,
+    nonce: "test_nonce_valid_payto",
+    resourceHash: "22".repeat(32),
+    amountSats: 1000n,
+    payTo: validPayTo,
+    network: "xec:mainnet",
+    scheme: "exact",
+    issuedAt: 1000,
+    expiresAt: 2000,
+    state: "ISSUED",
+  });
+
+  const { verifySettlementProof } = await import("../src/settlement-verifier.js");
+
+  let customConverterCalled = false;
+  let receivedAddress = "";
+  const mockCustomConverter = (addr: string) => {
+    customConverterCalled = true;
+    receivedAddress = addr;
+    return "76a914111111111111111111111111111111111111111188ac";
+  };
+
+  const tx = {
+    txid,
+    outputs: [
+      {
+        sats: 1000n,
+        outputScript: "76a914111111111111111111111111111111111111111188ac",
+      },
+    ],
+    isFinal: true,
+    timeFirstSeen: 1050,
+  };
+
+  const res = await verifySettlementProof({
+    proof: {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash,
+      txid,
+    },
+    store,
+    txProvider: {
+      getTx: async () => tx as any,
+    },
+    addressToScript: mockCustomConverter,
+    now: () => 1100,
+  });
+
+  assert.equal(customConverterCalled, true);
+  assert.equal(receivedAddress, validPayTo);
+  assert.equal(res.ok, true);
+  assert.equal(res.status, "UNLOCKED");
+
+  const record = await store.getByInvoiceHash(invoiceHash);
+  assert.equal(record?.state, "PAID");
+  assert.equal(record?.settledTxid, txid);
+});

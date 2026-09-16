@@ -677,3 +677,99 @@ test("Pass 2.2 Finding P1-3: End-to-end integration: historical tx on reused der
   }
 });
 
+test("Pass 2.3 Finding P1: Express defense in depth rejects custom addressToScript under production guards", () => {
+  const origEnv = process.env.NODE_ENV;
+  const { dir, dbPath } = createTempDb();
+  try {
+    const allocator = createXpubPayToAllocator(TEST_XPUB);
+    const durableStore = new SqliteAuthoritativeInvoiceStore(dbPath);
+    const txProvider = new MockTxProvider();
+    const customConverter = (_addr: string) => "76a914111111111111111111111111111111111111111188ac";
+
+    // 1. Secure/default Express middleware (NODE_ENV=undefined) + custom addressToScript -> throws TypeError
+    delete process.env.NODE_ENV;
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: durableStore,
+          txProvider,
+          addressToScript: customConverter,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      (err: any) =>
+        err instanceof TypeError &&
+        /Production real-funds middleware strictly prohibits custom addressToScript converters/.test(err.message),
+    );
+
+    // 2. Production environment (NODE_ENV=production) + custom addressToScript -> throws TypeError
+    process.env.NODE_ENV = "production";
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: durableStore,
+          txProvider,
+          addressToScript: customConverter,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      (err: any) =>
+        err instanceof TypeError &&
+        /Production real-funds middleware strictly prohibits custom addressToScript converters/.test(err.message),
+    );
+
+    // 3. NODE_ENV=test without allowInsecureDevelopmentMode -> still throws TypeError (secure by default)
+    process.env.NODE_ENV = "test";
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: durableStore,
+          txProvider,
+          addressToScript: customConverter,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      (err: any) =>
+        err instanceof TypeError &&
+        /Production real-funds middleware strictly prohibits custom addressToScript converters/.test(err.message),
+    );
+
+    // 4. NODE_ENV=test + explicit allowInsecureDevelopmentMode=true + custom converter -> initialization may proceed
+    process.env.NODE_ENV = "test";
+    assert.doesNotThrow(() =>
+      createX402SettlementMiddleware({
+        publicOrigin: PUBLIC_ORIGIN,
+        payToAllocator: allocator,
+        store: durableStore,
+        txProvider,
+        addressToScript: customConverter,
+        allowInsecureDevelopmentMode: true,
+        routes: { "GET /test": { amountSats: "100" } },
+      }),
+    );
+
+    // 5. NODE_ENV=development + explicit allowInsecureDevelopmentMode=true + custom converter -> initialization may proceed
+    process.env.NODE_ENV = "development";
+    assert.doesNotThrow(() =>
+      createX402SettlementMiddleware({
+        publicOrigin: PUBLIC_ORIGIN,
+        payToAllocator: allocator,
+        store: durableStore,
+        txProvider,
+        addressToScript: customConverter,
+        allowInsecureDevelopmentMode: true,
+        routes: { "GET /test": { amountSats: "100" } },
+      }),
+    );
+
+    durableStore.close();
+  } finally {
+    process.env.NODE_ENV = origEnv;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+

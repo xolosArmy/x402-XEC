@@ -130,38 +130,73 @@ test("P1-1: rejects malformed confirmed block structure with MALFORMED_CHRONIK_T
   }
 });
 
-test("P1-1: rejects non-boolean isFinal with MALFORMED_CHRONIK_TX", async () => {
-  const badIsFinalValues = ["true", "false", 1, 0, null, {}, []];
+test("P2: rejects non-boolean or missing isFinal with MALFORMED_CHRONIK_TX even if confirmed", async () => {
+  const badIsFinalValues = [undefined, null, "true", "false", 1, 0, {}, []];
 
   for (const isFinal of badIsFinalValues) {
-    const res = await runVerificationWithTx({
-      txid: TXID_1,
-      outputs: standardOutputs,
-      isFinal,
+    const store = new InMemoryAuthoritativeInvoiceStore();
+    const invoice = createInvoice({
+      request: { serverOrigin: "https://example.com", method: "GET", path: "/test" },
+      amountSats: 500n,
+      payTo: VALID_ADDR,
+      nonce: "test_nonce_123456789012345",
+      issuedAt: 1000,
+      expiresAt: 2000,
     });
+    const invoiceHash = computeInvoiceHash(invoice);
+    await store.issue({
+      invoiceHash,
+      nonce: invoice.nonce,
+      resourceHash: invoice.resourceHash,
+      amountSats: 500n,
+      payTo: VALID_ADDR,
+      network: "xec:mainnet",
+      scheme: "exact",
+      issuedAt: 1000,
+      expiresAt: 2000,
+      state: "ISSUED",
+    });
+
+    const res = await verifySettlementProof({
+      proof: {
+        x402Version: 1,
+        network: "xec:mainnet",
+        invoiceHash,
+        txid: TXID_1,
+      },
+      store,
+      txProvider: {
+        getTx: async () => ({
+          txid: TXID_1,
+          outputs: standardOutputs,
+          block: { height: 800_000, hash: VALID_HASH_64, timestamp: 1_700_000_000 },
+          isFinal,
+        } as any),
+      },
+      now: () => 1500,
+    });
+
     assert.equal(res.ok, false);
     assert.equal(res.code, "MALFORMED_CHRONIK_TX");
     assert.equal(res.httpStatus, 502);
+
+    // Verify: no commitPaid(), no PAID mutation, no resource unlock
+    const rec = await store.getByInvoiceHash(invoiceHash);
+    assert.equal(rec?.state, "ISSUED");
+    assert.equal(rec?.settledTxid ?? null, null);
   }
 });
 
 test("P1-1: unconfirmed transaction without isFinal: true returns TRANSACTION_NOT_FINAL", async () => {
-  const notFinalCases = [
-    { block: undefined, isFinal: false },
-    { block: undefined, isFinal: undefined },
-  ];
-
-  for (const c of notFinalCases) {
-    const res = await runVerificationWithTx({
-      txid: TXID_1,
-      outputs: standardOutputs,
-      block: c.block,
-      isFinal: c.isFinal,
-    });
-    assert.equal(res.ok, false);
-    assert.equal(res.code, "TRANSACTION_NOT_FINAL");
-    assert.equal(res.httpStatus, 402);
-  }
+  const res = await runVerificationWithTx({
+    txid: TXID_1,
+    outputs: standardOutputs,
+    block: undefined,
+    isFinal: false,
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.code, "TRANSACTION_NOT_FINAL");
+  assert.equal(res.httpStatus, 402);
 });
 
 test("P1-1: accepts valid confirmed block even if isFinal is false", async () => {

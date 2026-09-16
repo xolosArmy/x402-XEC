@@ -4,7 +4,7 @@
  * Gate C3B Server-Authoritative Settlement Proof Verification & Resource Unlock.
  */
 
-import { cashAddressToOutputScriptHex } from "./cashaddr.js";
+import { cashAddressToOutputScriptHex, decodeCashAddress } from "./cashaddr.js";
 import {
   isValidChronikBlock,
   TxNotFoundError,
@@ -255,7 +255,7 @@ export async function verifySettlementProof(
   }
 
   // 8. Enforce confirmation or Avalanche-finality with strict shape validation
-  if (tx.isFinal !== undefined && typeof tx.isFinal !== "boolean") {
+  if (typeof (tx as any).isFinal !== "boolean") {
     return {
       ok: false,
       httpStatus: 502,
@@ -338,6 +338,19 @@ export async function verifySettlementProof(
   }
 
   // 9. Derive expected locking script from invoice.payTo
+  // ALWAYS validate invoice.payTo with the canonical strict CashAddr decoder
+  // BEFORE invoking any custom addressToScript hook.
+  try {
+    decodeCashAddress(invoice.payTo);
+  } catch (err) {
+    return {
+      ok: false,
+      httpStatus: 500,
+      code: "PAY_TO_MISMATCH",
+      message: `Invalid canonical CashAddr invoice payTo: ${err instanceof Error ? err.message : String(err)}`,
+    };
+  }
+
   let expectedScriptHex: string;
   try {
     expectedScriptHex = options.addressToScript
