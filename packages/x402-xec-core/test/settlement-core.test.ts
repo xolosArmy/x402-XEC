@@ -125,3 +125,59 @@ test("InMemoryAuthoritativeInvoiceStore commitPaid handles transitions and confl
   const byTxid = await store.getBySettledTxid(txid1);
   assert.equal(byTxid?.invoiceHash, invoiceHash);
 });
+
+test("verifySettlementProof rejects unconfirmed non-final transactions", async () => {
+  const store = new InMemoryAuthoritativeInvoiceStore();
+  const invoiceHash = "bb".repeat(32);
+  const txid = "44".repeat(32);
+
+  await store.issue({
+    invoiceHash,
+    nonce: "unique_nonce_222222222222",
+    resourceHash: "11".repeat(32),
+    amountSats: 1000n,
+    payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+    network: "xec:mainnet",
+    scheme: "exact",
+    issuedAt: 1000,
+    expiresAt: 1060,
+    state: "ISSUED",
+  });
+
+  const { verifySettlementProof } = await import("../src/settlement-verifier.js");
+
+  const unconfirmedNonFinalTx = {
+    txid,
+    outputs: [
+      {
+        sats: 1000n,
+        outputScript: "76a914111111111111111111111111111111111111111188ac",
+      },
+    ],
+    isFinal: false,
+  };
+
+  const res = await verifySettlementProof({
+    proof: {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash,
+      txid,
+    },
+    store,
+    txProvider: {
+      getTx: async () => unconfirmedNonFinalTx as any,
+    },
+    now: () => 1020,
+  });
+
+  assert.equal(res.ok, false);
+  if (!res.ok) {
+    assert.equal(res.code, "TRANSACTION_NOT_FINAL");
+    assert.equal(res.httpStatus, 402);
+  }
+
+  // Authoritative state must still be ISSUED
+  const record = await store.getByInvoiceHash(invoiceHash);
+  assert.equal(record?.state, "ISSUED");
+});

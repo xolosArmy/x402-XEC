@@ -62,7 +62,10 @@ async function startApp(app: Express): Promise<StartedApp> {
 }
 
 class MockTxProvider implements TxProvider {
-  public txs = new Map<string, ChronikTransaction>();
+  public txs = new Map<
+    string,
+    Partial<ChronikTransaction> & { txid: string; outputs: readonly ChronikTransactionOutput[] }
+  >();
   public failWithUnavailable = false;
   public returnMalformed = false;
   public returnWrongTxid = false;
@@ -80,13 +83,19 @@ class MockTxProvider implements TxProvider {
       return {
         txid: "99".repeat(32),
         outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+        isFinal: true,
       };
     }
     const found = this.txs.get(txid.toLowerCase());
     if (!found) {
       throw new TxNotFoundError(txid);
     }
-    return found;
+    return {
+      isFinal: found.isFinal !== undefined ? found.isFinal : true,
+      outputs: found.outputs,
+      txid: found.txid,
+      ...(found.block !== undefined ? { block: found.block } : {}),
+    };
   }
 }
 
@@ -911,6 +920,224 @@ test("20. protected resource handler is unreachable before proof commit", async 
     });
     assert.equal(resUnlock.status, 200);
     assert.equal(fixture.getHandlerCalls(), 1);
+  } finally {
+    await server.close();
+  }
+});
+
+// ---------------------------------------------------------------------------
+// MANDATORY FINALITY ENFORCEMENT TESTS
+// ---------------------------------------------------------------------------
+
+test("finality 1: block undefined + isFinal false -> TRANSACTION_NOT_FINAL, no commitPaid, unpaid, not unlocked", async () => {
+  const fixture = setupTestServer();
+  const server = await startApp(fixture.app);
+  try {
+    const res402 = await fetch(`${server.origin}/protected`);
+    const offer = await res402.json();
+
+    fixture.txProvider.txs.set(TXID_1, {
+      txid: TXID_1,
+      outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+      block: undefined,
+      isFinal: false,
+    });
+
+    const proof = {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash: offer.invoiceId,
+      txid: TXID_1,
+    };
+
+    const res = await fetch(`${server.origin}/protected`, {
+      headers: { [PAYMENT_PROOF_HEADER]: JSON.stringify(proof) },
+    });
+
+    assert.equal(res.status, 402);
+    const body = await res.json();
+    assert.equal(body.error, "TRANSACTION_NOT_FINAL");
+    assert.equal(body.message, "Transaction is neither confirmed nor Avalanche-final");
+    assert.equal(fixture.getHandlerCalls(), 0);
+
+    // Verify invoice remains unpaid in authoritative store
+    const record = await fixture.store.getByInvoiceHash(offer.invoiceId);
+    assert.equal(record?.state, "ISSUED");
+    assert.equal(record?.settledTxid, undefined);
+  } finally {
+    await server.close();
+  }
+});
+
+test("finality 2: block undefined + isFinal true -> may settle", async () => {
+  const fixture = setupTestServer();
+  const server = await startApp(fixture.app);
+  try {
+    const res402 = await fetch(`${server.origin}/protected`);
+    const offer = await res402.json();
+
+    fixture.txProvider.txs.set(TXID_1, {
+      txid: TXID_1,
+      outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+      block: undefined,
+      isFinal: true,
+    });
+
+    const proof = {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash: offer.invoiceId,
+      txid: TXID_1,
+    };
+
+    const res = await fetch(`${server.origin}/protected`, {
+      headers: { [PAYMENT_PROOF_HEADER]: JSON.stringify(proof) },
+    });
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.secret, "UNLOCKED_DATA");
+    assert.equal(fixture.getHandlerCalls(), 1);
+
+    const record = await fixture.store.getByInvoiceHash(offer.invoiceId);
+    assert.equal(record?.state, "PAID");
+    assert.equal(record?.settledTxid, TXID_1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("finality 3: block present + isFinal false -> may settle", async () => {
+  const fixture = setupTestServer();
+  const server = await startApp(fixture.app);
+  try {
+    const res402 = await fetch(`${server.origin}/protected`);
+    const offer = await res402.json();
+
+    fixture.txProvider.txs.set(TXID_1, {
+      txid: TXID_1,
+      outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+      block: { height: 800000, hash: "00".repeat(32), timestamp: NOW_BASE },
+      isFinal: false,
+    });
+
+    const proof = {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash: offer.invoiceId,
+      txid: TXID_1,
+    };
+
+    const res = await fetch(`${server.origin}/protected`, {
+      headers: { [PAYMENT_PROOF_HEADER]: JSON.stringify(proof) },
+    });
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.secret, "UNLOCKED_DATA");
+    assert.equal(fixture.getHandlerCalls(), 1);
+
+    const record = await fixture.store.getByInvoiceHash(offer.invoiceId);
+    assert.equal(record?.state, "PAID");
+    assert.equal(record?.settledTxid, TXID_1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("finality 4: block present + isFinal true -> may settle", async () => {
+  const fixture = setupTestServer();
+  const server = await startApp(fixture.app);
+  try {
+    const res402 = await fetch(`${server.origin}/protected`);
+    const offer = await res402.json();
+
+    fixture.txProvider.txs.set(TXID_1, {
+      txid: TXID_1,
+      outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+      block: { height: 800000, hash: "00".repeat(32), timestamp: NOW_BASE },
+      isFinal: true,
+    });
+
+    const proof = {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash: offer.invoiceId,
+      txid: TXID_1,
+    };
+
+    const res = await fetch(`${server.origin}/protected`, {
+      headers: { [PAYMENT_PROOF_HEADER]: JSON.stringify(proof) },
+    });
+
+    assert.equal(res.status, 200);
+    const data = await res.json();
+    assert.equal(data.secret, "UNLOCKED_DATA");
+    assert.equal(fixture.getHandlerCalls(), 1);
+
+    const record = await fixture.store.getByInvoiceHash(offer.invoiceId);
+    assert.equal(record?.state, "PAID");
+    assert.equal(record?.settledTxid, TXID_1);
+  } finally {
+    await server.close();
+  }
+});
+
+test("finality 5: non-final first attempt followed by final retry", async () => {
+  const fixture = setupTestServer();
+  const server = await startApp(fixture.app);
+  try {
+    const res402 = await fetch(`${server.origin}/protected`);
+    const offer = await res402.json();
+
+    // First attempt: unconfirmed and not final
+    fixture.txProvider.txs.set(TXID_1, {
+      txid: TXID_1,
+      outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+      block: undefined,
+      isFinal: false,
+    });
+
+    const proof = {
+      x402Version: 1,
+      network: "xec:mainnet",
+      invoiceHash: offer.invoiceId,
+      txid: TXID_1,
+    };
+
+    const res1 = await fetch(`${server.origin}/protected`, {
+      headers: { [PAYMENT_PROOF_HEADER]: JSON.stringify(proof) },
+    });
+    assert.equal(res1.status, 402);
+    const body1 = await res1.json();
+    assert.equal(body1.error, "TRANSACTION_NOT_FINAL");
+    assert.equal(fixture.getHandlerCalls(), 0);
+
+    // Assert authoritative state has NOT mutated to PAID
+    const recordAfterFirst = await fixture.store.getByInvoiceHash(offer.invoiceId);
+    assert.equal(recordAfterFirst?.state, "ISSUED");
+    assert.equal(recordAfterFirst?.settledTxid, undefined);
+
+    // Second attempt: transaction becomes Avalanche-final
+    fixture.txProvider.txs.set(TXID_1, {
+      txid: TXID_1,
+      outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
+      block: undefined,
+      isFinal: true,
+    });
+
+    const res2 = await fetch(`${server.origin}/protected`, {
+      headers: { [PAYMENT_PROOF_HEADER]: JSON.stringify(proof) },
+    });
+    assert.equal(res2.status, 200);
+    const data2 = await res2.json();
+    assert.equal(data2.secret, "UNLOCKED_DATA");
+    assert.equal(fixture.getHandlerCalls(), 1);
+
+    // Assert authoritative state has mutated to PAID
+    const recordAfterSecond = await fixture.store.getByInvoiceHash(offer.invoiceId);
+    assert.equal(recordAfterSecond?.state, "PAID");
+    assert.equal(recordAfterSecond?.settledTxid, TXID_1);
   } finally {
     await server.close();
   }

@@ -44,6 +44,7 @@ export type SettlementVerificationErrorCode =
   | "INVOICE_EXPIRED"
   | "INVOICE_NOT_YET_VALID"
   | "TX_NOT_FOUND"
+  | "TRANSACTION_NOT_FINAL"
   | "PAY_TO_MISMATCH"
   | "AMOUNT_MISMATCH"
   | "TOKEN_OUTPUT_DISALLOWED"
@@ -244,7 +245,17 @@ export async function verifySettlementProof(
     };
   }
 
-  // 8. Derive expected locking script from invoice.payTo
+  // 8. Enforce confirmation or Avalanche-finality
+  if (tx.block === undefined && tx.isFinal !== true) {
+    return {
+      ok: false,
+      httpStatus: 402,
+      code: "TRANSACTION_NOT_FINAL",
+      message: "Transaction is neither confirmed nor Avalanche-final",
+    };
+  }
+
+  // 9. Derive expected locking script from invoice.payTo
   let expectedScriptHex: string;
   try {
     expectedScriptHex = options.addressToScript
