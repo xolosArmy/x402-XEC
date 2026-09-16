@@ -5,7 +5,12 @@
  */
 
 import { cashAddressToOutputScriptHex } from "./cashaddr.js";
-import { TxNotFoundError, type ChronikTransaction, type TxProvider } from "./chronik.js";
+import {
+  isValidChronikBlock,
+  TxNotFoundError,
+  type ChronikTransaction,
+  type TxProvider,
+} from "./chronik.js";
 import type { AuthoritativeInvoiceRecord, AuthoritativeInvoiceStore } from "./invoice-store.js";
 import { computeResourceHash, type ResourceRequest } from "./resource.js";
 import {
@@ -245,8 +250,31 @@ export async function verifySettlementProof(
     };
   }
 
-  // 8. Enforce confirmation or Avalanche-finality
-  if (tx.block === undefined && tx.isFinal !== true) {
+  // 8. Enforce confirmation or Avalanche-finality with strict shape validation
+  if (tx.isFinal !== undefined && typeof tx.isFinal !== "boolean") {
+    return {
+      ok: false,
+      httpStatus: 502,
+      code: "MALFORMED_CHRONIK_TX",
+      message: "Chronik returned non-boolean isFinal field",
+    };
+  }
+
+  let validConfirmedBlock = false;
+  if (tx.block !== undefined) {
+    if (!isValidChronikBlock(tx.block)) {
+      return {
+        ok: false,
+        httpStatus: 502,
+        code: "MALFORMED_CHRONIK_TX",
+        message: "Chronik returned malformed confirmed block structure",
+      };
+    }
+    validConfirmedBlock = true;
+  }
+
+  const isAvalancheFinal = tx.isFinal === true;
+  if (!validConfirmedBlock && !isAvalancheFinal) {
     return {
       ok: false,
       httpStatus: 402,
@@ -260,7 +288,7 @@ export async function verifySettlementProof(
   try {
     expectedScriptHex = options.addressToScript
       ? options.addressToScript(invoice.payTo)
-      : cashAddressToOutputScriptHex(invoice.payTo, { ignoreChecksum: true });
+      : cashAddressToOutputScriptHex(invoice.payTo);
   } catch (err) {
     return {
       ok: false,

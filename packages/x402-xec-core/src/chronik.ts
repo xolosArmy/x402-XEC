@@ -93,6 +93,44 @@ export type InspectFundingTransactionInput =
   });
 
 /**
+ * Strictly validates the shape of a Chronik block confirmation structure.
+ * Requires:
+ * - non-null plain object
+ * - height: safe non-negative integer
+ * - hash: canonical lowercase 64-char hex
+ * - timestamp: safe non-negative integer
+ */
+export function isValidChronikBlock(block: unknown): block is ChronikBlock {
+  if (typeof block !== "object" || block === null || Array.isArray(block)) {
+    return false;
+  }
+  const b = block as Record<string, unknown>;
+  if (
+    typeof b.height !== "number" ||
+    !Number.isInteger(b.height) ||
+    !Number.isSafeInteger(b.height) ||
+    b.height < 0
+  ) {
+    return false;
+  }
+  if (
+    typeof b.hash !== "string" ||
+    !/^[0-9a-f]{64}$/.test(b.hash)
+  ) {
+    return false;
+  }
+  if (
+    typeof b.timestamp !== "number" ||
+    !Number.isInteger(b.timestamp) ||
+    !Number.isSafeInteger(b.timestamp) ||
+    b.timestamp < 0
+  ) {
+    return false;
+  }
+  return true;
+}
+
+/**
  * Inspects a payment output through the injected read-only transaction boundary.
  * The helper performs no network setup and cannot construct or broadcast a tx.
  */
@@ -125,7 +163,15 @@ export async function inspectFundingTransaction(
   if (output.token !== undefined) {
     return { ok: false, code: "TOKEN_OUTPUT" };
   }
-  if (transaction.block === undefined && transaction.isFinal !== true) {
+  let validConfirmedBlock = false;
+  if (transaction.block !== undefined) {
+    if (!isValidChronikBlock(transaction.block)) {
+      return { ok: false, code: "TRANSACTION_NOT_FINAL" };
+    }
+    validConfirmedBlock = true;
+  }
+  const isAvalancheFinal = transaction.isFinal === true;
+  if (!validConfirmedBlock && !isAvalancheFinal) {
     return { ok: false, code: "TRANSACTION_NOT_FINAL" };
   }
 

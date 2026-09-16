@@ -6,9 +6,9 @@
   "type": "module",
   "scripts": {
     "build": "pnpm run build:frontend && tsc -p tsconfig.json",
-    "build:frontend": "esbuild src/browser.ts --bundle --platform=browser --format=iife --alias:node:crypto=./src/browser-crypto-shim.ts --outfile=dist/browser/app.js",
+    "build:frontend": "esbuild src/browser.ts --bundle --platform=browser --format=iife --alias:node:crypto=./src/browser-crypto-shim.ts --alias:node:sqlite=./src/browser-sqlite-shim.ts --outfile=dist/browser/app.js",
     "start": "pnpm run build:frontend && tsx src/index.ts",
-    "test": "tsx --test test/**/*.test.ts",
+    "test": "tsx --test test/*.test.ts",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "engines": {

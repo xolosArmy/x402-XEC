@@ -9,6 +9,7 @@ import {
   computeInvoiceHash,
   computeResourceHash,
   createInvoice,
+  decodeCashAddress,
   invoiceSchema,
   normalizeMethod,
   normalizeServerOrigin,
@@ -21,6 +22,7 @@ import {
   type CanonicalValue,
   type ChronikQueryTarget,
   type Invoice,
+  type InvoicePayToAllocator,
   type ResourceRequest,
   type SettlementVerificationSuccess,
 } from "@x402-xec/core";
@@ -41,13 +43,15 @@ export interface SettlementRouteConfig {
 
 export interface CreateX402SettlementMiddlewareConfig {
   readonly publicOrigin: string;
-  readonly payTo: string;
+  readonly payTo?: string | undefined;
+  readonly payToAllocator?: InvoicePayToAllocator | undefined;
   readonly routes: Record<string, SettlementRouteConfig>;
   readonly store: AuthoritativeInvoiceStore;
   readonly txProvider: ChronikQueryTarget;
   readonly expirySeconds?: number | undefined;
   readonly now?: (() => number) | undefined;
   readonly addressToScript?: ((address: string) => string) | undefined;
+  readonly production?: boolean | undefined;
 }
 
 declare global {
@@ -154,9 +158,35 @@ function parseProofHeader(rawHeader: string): unknown {
 export function createX402SettlementMiddleware(
   config: CreateX402SettlementMiddlewareConfig,
 ): RequestHandler {
+  const isProduction =
+    config.production === true ||
+    (config.production !== false && process.env.NODE_ENV === "production");
+
+  if (isProduction) {
+    if (!config.store.isDurable) {
+      throw new TypeError(
+        "Production real-funds middleware requires a durable authoritative store (isDurable: true). Process-local stores (InMemoryAuthoritativeInvoiceStore) are strictly rejected.",
+      );
+    }
+    if (!config.payToAllocator) {
+      throw new TypeError(
+        "Production real-funds middleware requires a watch-only payToAllocator for unique per-invoice on-chain binding (P0). Static payTo is strictly prohibited in production.",
+      );
+    }
+  }
+
+  if (!config.payToAllocator && !config.payTo) {
+    throw new TypeError("Either payToAllocator or payTo must be provided");
+  }
+
   const publicOrigin = normalizeServerOrigin(config.publicOrigin);
   const routes = parseRoutes(config.routes);
-  const payTo = invoiceSchema.shape.payTo.parse(config.payTo);
+  const staticPayTo = config.payTo
+    ? invoiceSchema.shape.payTo.parse(config.payTo)
+    : undefined;
+  if (staticPayTo) {
+    decodeCashAddress(staticPayTo);
+  }
   const expirySeconds = config.expirySeconds ?? DEFAULT_EXPIRY_SECONDS;
   const now = config.now ?? (() => Math.floor(Date.now() / 1000));
 
@@ -183,30 +213,53 @@ export function createX402SettlementMiddleware(
       const issuedAt = now();
       const expiresAt = issuedAt + expirySeconds;
       const nonce = randomBytes(24).toString("base64url");
+      const resourceHash = computeResourceHash(resource);
+      const amountSats = parseAmountSats(route.amountSats);
 
-      const invoice: Invoice = createInvoice({
-        request: resource,
-        amountSats: parseAmountSats(route.amountSats),
-        payTo,
-        nonce,
-        issuedAt,
-        expiresAt,
-      });
+      let invoice: Invoice;
+      let invoiceHash: string;
 
-      const invoiceHash = computeInvoiceHash(invoice);
+      if (config.payToAllocator) {
+        const allocated = await config.store.issueWithAllocation(
+          {
+            nonce,
+            resourceHash,
+            amountSats,
+            issuedAt,
+            expiresAt,
+            state: "ISSUED",
+            network: XEC_MAINNET,
+            scheme: "exact",
+          },
+          config.payToAllocator,
+        );
+        invoice = allocated.invoice;
+        invoiceHash = allocated.record.invoiceHash;
+      } else {
+        invoice = createInvoice({
+          request: resource,
+          amountSats,
+          payTo: staticPayTo!,
+          nonce,
+          issuedAt,
+          expiresAt,
+        });
 
-      await config.store.issue({
-        invoiceHash,
-        nonce: invoice.nonce,
-        resourceHash: invoice.resourceHash,
-        amountSats: BigInt(invoice.amountSats),
-        payTo: invoice.payTo,
-        network: XEC_MAINNET,
-        scheme: "exact",
-        issuedAt: invoice.issuedAt,
-        expiresAt: invoice.expiresAt,
-        state: "ISSUED",
-      });
+        invoiceHash = computeInvoiceHash(invoice);
+
+        await config.store.issue({
+          invoiceHash,
+          nonce: invoice.nonce,
+          resourceHash: invoice.resourceHash,
+          amountSats: BigInt(invoice.amountSats),
+          payTo: invoice.payTo,
+          network: XEC_MAINNET,
+          scheme: "exact",
+          issuedAt: invoice.issuedAt,
+          expiresAt: invoice.expiresAt,
+          state: "ISSUED",
+        });
+      }
 
       response.setHeader("payment-required", "true");
       response.status(402).json({

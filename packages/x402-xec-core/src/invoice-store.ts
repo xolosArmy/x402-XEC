@@ -4,6 +4,16 @@
  * Server-authoritative invoice storage and ACID settlement proof state machine.
  */
 
+import { computeInvoiceHash } from "./invoice.js";
+import type { InvoicePayToAllocator } from "./pay-to-allocator.js";
+import {
+  invoiceSchema,
+  type Invoice,
+  X402_VERSION,
+  XEC_MAINNET,
+  XEC_SCHEME,
+} from "./schemas.js";
+
 export type AuthoritativeInvoiceState = "ISSUED" | "VERIFYING" | "PAID";
 
 export interface AuthoritativeInvoiceRecord {
@@ -19,6 +29,7 @@ export interface AuthoritativeInvoiceRecord {
   readonly state: AuthoritativeInvoiceState;
   readonly settledTxid?: string;
   readonly settledAt?: number;
+  readonly derivationIndex?: number;
 }
 
 export type CommitPaidResult =
@@ -33,12 +44,43 @@ export type CommitPaidResult =
       readonly message: string;
     };
 
+export interface IssueWithAllocationParams {
+  readonly nonce: string;
+  readonly resourceHash: string;
+  readonly amountSats: bigint;
+  readonly network?: "xec:mainnet";
+  readonly scheme?: "exact";
+  readonly issuedAt: number;
+  readonly expiresAt: number;
+  readonly state?: AuthoritativeInvoiceState;
+}
+
+export interface IssueWithAllocationResult {
+  readonly record: AuthoritativeInvoiceRecord;
+  readonly invoice: Invoice;
+}
+
 export interface AuthoritativeInvoiceStore {
   /**
-   * Persists a freshly issued authoritative invoice record.
-   * Throws if nonce is already registered or invoiceHash already exists.
+   * Indicates whether this store guarantees durable ACID persistence across restarts.
+   * Production middleware MUST fail closed if isDurable is false.
+   */
+  readonly isDurable: boolean;
+
+  /**
+   * Persists a freshly issued authoritative invoice record with explicit payTo.
+   * Throws if nonce is already registered, invoiceHash already exists, or payTo/derivationIndex conflicts.
    */
   issue(record: AuthoritativeInvoiceRecord): Promise<void>;
+
+  /**
+   * Atomically allocates the next monotonic derivationIndex, derives a unique payTo address
+   * via the provided allocator, computes the invoice, and persists the record in one authoritative operation.
+   */
+  issueWithAllocation(
+    params: IssueWithAllocationParams,
+    allocator: InvoicePayToAllocator,
+  ): Promise<IssueWithAllocationResult>;
 
   /**
    * Retrieves an invoice record by its canonical invoiceHash.
@@ -49,6 +91,16 @@ export interface AuthoritativeInvoiceStore {
    * Retrieves an invoice record by the txid that settled it.
    */
   getBySettledTxid(txid: string): Promise<AuthoritativeInvoiceRecord | null>;
+
+  /**
+   * Retrieves an invoice record by its allocated payTo destination address.
+   */
+  getByPayTo(payTo: string): Promise<AuthoritativeInvoiceRecord | null>;
+
+  /**
+   * Returns the next available derivation index without allocating it.
+   */
+  getNextDerivationIndex(): Promise<number>;
 
   /**
    * Atomically transitions an invoice to PAID, binding the settling txid.
@@ -62,6 +114,11 @@ export interface AuthoritativeInvoiceStore {
     txid: string,
     paidAt: number,
   ): Promise<CommitPaidResult>;
+
+  /**
+   * Closes the store and releases resources if applicable.
+   */
+  close?(): Promise<void> | void;
 }
 
 export class InvoiceStoreError extends Error {
@@ -75,15 +132,23 @@ export class InvoiceStoreError extends Error {
 }
 
 /**
- * In-memory reference implementation of AuthoritativeInvoiceStore with
- * serialized atomic mutations to guarantee multi-attempt and concurrency safety.
+ * In-memory reference implementation of AuthoritativeInvoiceStore.
+ *
+ * WARNING: PROCESS-LOCAL ONLY.
+ * MUST NOT be used as ACID durable authority for production real-funds middleware.
+ * Keep ONLY for test and development reference.
  */
 export class InMemoryAuthoritativeInvoiceStore implements AuthoritativeInvoiceStore {
+  readonly isDurable = false;
+
   private readonly records = new Map<string, AuthoritativeInvoiceRecord>();
   private readonly nonceToInvoice = new Map<string, string>();
   private readonly txidToInvoice = new Map<string, string>();
+  private readonly payToToInvoice = new Map<string, string>();
+  private readonly indexToInvoice = new Map<number, string>();
+  private nextDerivationIndex = 0;
 
-  // Async lock / queue to serialize concurrent state transitions
+  // Async lock / queue to serialize concurrent operations
   private lockPromise: Promise<void> = Promise.resolve();
 
   private async withLock<T>(fn: () => Promise<T> | T): Promise<T> {
@@ -108,9 +173,94 @@ export class InMemoryAuthoritativeInvoiceStore implements AuthoritativeInvoiceSt
           `Nonce ${record.nonce} has already been used by invoice ${this.nonceToInvoice.get(record.nonce)}`,
         );
       }
+      if (record.derivationIndex !== undefined) {
+        if (this.payToToInvoice.has(record.payTo)) {
+          throw new InvoiceStoreError(
+            "PAY_TO_ALREADY_USED",
+            `Payment address ${record.payTo} has already been allocated to invoice ${this.payToToInvoice.get(record.payTo)}`,
+          );
+        }
+        if (this.indexToInvoice.has(record.derivationIndex)) {
+          throw new InvoiceStoreError(
+            "DERIVATION_INDEX_ALREADY_USED",
+            `Derivation index ${record.derivationIndex} has already been allocated`,
+          );
+        }
+        this.payToToInvoice.set(record.payTo, record.invoiceHash);
+        this.indexToInvoice.set(record.derivationIndex, record.invoiceHash);
+        this.nextDerivationIndex = Math.max(this.nextDerivationIndex, record.derivationIndex + 1);
+      } else {
+        this.payToToInvoice.set(record.payTo, record.invoiceHash);
+      }
 
       this.records.set(record.invoiceHash, { ...record });
       this.nonceToInvoice.set(record.nonce, record.invoiceHash);
+    });
+  }
+
+  async issueWithAllocation(
+    params: IssueWithAllocationParams,
+    allocator: InvoicePayToAllocator,
+  ): Promise<IssueWithAllocationResult> {
+    return this.withLock(() => {
+      if (this.nonceToInvoice.has(params.nonce)) {
+        throw new InvoiceStoreError(
+          "NONCE_ALREADY_USED",
+          `Nonce ${params.nonce} has already been used by invoice ${this.nonceToInvoice.get(params.nonce)}`,
+        );
+      }
+
+      const derivationIndex = this.nextDerivationIndex++;
+      const payTo = allocator.deriveAddress(derivationIndex);
+
+      if (this.payToToInvoice.has(payTo)) {
+        throw new InvoiceStoreError(
+          "PAY_TO_ALREADY_USED",
+          `Payment address ${payTo} has already been allocated to invoice ${this.payToToInvoice.get(payTo)}`,
+        );
+      }
+
+      const invoice: Invoice = invoiceSchema.parse({
+        x402Version: X402_VERSION,
+        scheme: params.scheme ?? XEC_SCHEME,
+        network: params.network ?? XEC_MAINNET,
+        resourceHash: params.resourceHash,
+        amountSats: params.amountSats.toString(10),
+        payTo,
+        nonce: params.nonce,
+        issuedAt: params.issuedAt,
+        expiresAt: params.expiresAt,
+      });
+
+      const invoiceHash = computeInvoiceHash(invoice);
+
+      if (this.records.has(invoiceHash)) {
+        throw new InvoiceStoreError(
+          "INVOICE_ALREADY_EXISTS",
+          `Invoice ${invoiceHash} has already been issued`,
+        );
+      }
+
+      const record: AuthoritativeInvoiceRecord = {
+        invoiceHash,
+        nonce: invoice.nonce,
+        resourceHash: invoice.resourceHash,
+        amountSats: params.amountSats,
+        payTo,
+        network: params.network ?? XEC_MAINNET,
+        scheme: params.scheme ?? XEC_SCHEME,
+        issuedAt: invoice.issuedAt,
+        expiresAt: invoice.expiresAt,
+        state: params.state ?? "ISSUED",
+        derivationIndex,
+      };
+
+      this.records.set(invoiceHash, record);
+      this.nonceToInvoice.set(record.nonce, invoiceHash);
+      this.payToToInvoice.set(payTo, invoiceHash);
+      this.indexToInvoice.set(derivationIndex, invoiceHash);
+
+      return { record, invoice };
     });
   }
 
@@ -127,6 +277,21 @@ export class InMemoryAuthoritativeInvoiceStore implements AuthoritativeInvoiceSt
       if (!invoiceHash) return null;
       const existing = this.records.get(invoiceHash);
       return existing ? { ...existing } : null;
+    });
+  }
+
+  async getByPayTo(payTo: string): Promise<AuthoritativeInvoiceRecord | null> {
+    return this.withLock(() => {
+      const invoiceHash = this.payToToInvoice.get(payTo);
+      if (!invoiceHash) return null;
+      const existing = this.records.get(invoiceHash);
+      return existing ? { ...existing } : null;
+    });
+  }
+
+  async getNextDerivationIndex(): Promise<number> {
+    return this.withLock(() => {
+      return this.nextDerivationIndex;
     });
   }
 
