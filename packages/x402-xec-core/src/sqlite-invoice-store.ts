@@ -27,6 +27,7 @@
  *   which sets `isDurable = false` to guarantee production middleware will reject it.
  */
 
+import path from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { computeInvoiceHash } from "./invoice.js";
 import {
@@ -423,8 +424,9 @@ export abstract class BaseSqliteAuthoritativeInvoiceStore
 
 /**
  * Production-grade durable SQLite authoritative invoice store.
- * Requires an explicit persistent filesystem path.
- * In-memory databases are strictly rejected to guarantee durability.
+ * Requires an explicit persistent filesystem path and positively verifies
+ * that SQLite opens a genuine filesystem-backed file via PRAGMA database_list.
+ * In-memory databases and URI schemes are strictly rejected to guarantee durability.
  */
 export class SqliteAuthoritativeInvoiceStore extends BaseSqliteAuthoritativeInvoiceStore {
   readonly isDurable = true;
@@ -441,20 +443,78 @@ export class SqliteAuthoritativeInvoiceStore extends BaseSqliteAuthoritativeInvo
         "SqliteAuthoritativeInvoiceStore requires a non-empty persistent filesystem path.",
       );
     }
+
+    // 2. Reject SQLite URI-style filenames for the durable production class,
+    // including any input beginning with: "file:"
     const lower = trimmed.toLowerCase();
     if (
+      lower.startsWith("file:") ||
       lower === ":memory:" ||
-      lower.startsWith("file::memory:") ||
+      lower.includes(":memory:") ||
       lower.includes("mode=memory") ||
-      lower.includes(":memory:")
+      lower.includes("vfs=memdb")
     ) {
       throw new TypeError(
-        `Volatile in-memory SQLite database (${trimmed}) is prohibited for SqliteAuthoritativeInvoiceStore. ` +
-          `Use InMemorySqliteAuthoritativeInvoiceStore for testing or provide a persistent file path.`,
+        `Volatile or URI database path (${trimmed}) is prohibited for SqliteAuthoritativeInvoiceStore. ` +
+          `Use InMemorySqliteAuthoritativeInvoiceStore for testing or provide a standard filesystem path.`,
       );
     }
 
-    super(new DatabaseSync(trimmed), trimmed);
+    // 3. Resolve the requested filesystem path canonically before opening.
+    const resolvedPath = path.resolve(trimmed);
+
+    // 4. Open DatabaseSync.
+    const db = new DatabaseSync(resolvedPath);
+
+    // 5. Positive engine verification: query PRAGMA database_list;
+    try {
+      const dbList = db.prepare("PRAGMA database_list;").all() as Array<{
+        seq?: number;
+        name?: string;
+        file?: string;
+      }>;
+
+      // 6. Find the row where: name === "main"
+      const mainRow = dbList.find((row) => row && row.name === "main");
+
+      // 7. Require:
+      // - main row exists
+      // - main.file is a non-empty string
+      // - main.file resolves to an actual filesystem-backed path
+      // - resolved main.file corresponds to the requested durable database path
+      if (
+        !mainRow ||
+        typeof mainRow.file !== "string" ||
+        mainRow.file.trim().length === 0
+      ) {
+        throw new TypeError(
+          `SQLite failed durability verification: 'main' database file is empty or missing. Path: ${trimmed}`,
+        );
+      }
+
+      const resolvedMainFile = path.resolve(mainRow.file);
+      if (resolvedMainFile !== resolvedPath) {
+        throw new TypeError(
+          `SQLite opened file mismatch: expected '${resolvedPath}', got '${resolvedMainFile}'`,
+        );
+      }
+    } catch (err) {
+      // 8. If any verification fails:
+      // - close the opened DB
+      // - throw TypeError
+      // - never expose the instance as usable durable authority
+      try {
+        db.close();
+      } catch {}
+      if (err instanceof TypeError) {
+        throw err;
+      }
+      throw new TypeError(
+        `Failed positive SQLite durability verification for '${trimmed}': ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+
+    super(db, resolvedPath);
   }
 }
 

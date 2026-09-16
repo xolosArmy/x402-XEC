@@ -404,23 +404,46 @@ test("Pass 2.1 Finding 1: durable SqliteAuthoritativeInvoiceStore constructor re
   );
 });
 
-test("Pass 2.1 Finding 1: durable SqliteAuthoritativeInvoiceStore constructor strictly rejects :memory: and memory URIs", () => {
-  assert.throws(
-    () => new SqliteAuthoritativeInvoiceStore(":memory:"),
-    /Volatile in-memory SQLite database \(:memory:\) is prohibited for SqliteAuthoritativeInvoiceStore/,
-  );
-  assert.throws(
-    () => new SqliteAuthoritativeInvoiceStore("file::memory:"),
-    /Volatile in-memory SQLite database \(file::memory:\) is prohibited for SqliteAuthoritativeInvoiceStore/,
-  );
-  assert.throws(
-    () => new SqliteAuthoritativeInvoiceStore("file:test.db?mode=memory"),
-    /Volatile in-memory SQLite database \(file:test.db\?mode=memory\) is prohibited for SqliteAuthoritativeInvoiceStore/,
-  );
-  assert.throws(
-    () => new SqliteAuthoritativeInvoiceStore("file::memory:?cache=shared"),
-    /Volatile in-memory SQLite database \(file::memory:\?cache=shared\) is prohibited for SqliteAuthoritativeInvoiceStore/,
-  );
+test("Pass 2.2 Finding P1-1: durable SqliteAuthoritativeInvoiceStore constructor strictly rejects :memory:, memory URIs, and any file: URI", () => {
+  const rejectedPaths = [
+    ":memory:",
+    "file::memory:",
+    "file:test.db?mode=memory",
+    "file::memory:?cache=shared",
+    "file:/ignored?vfs=memdb",
+    "file:///tmp/database.sqlite",
+    "file:relative.sqlite",
+  ];
+
+  for (const badPath of rejectedPaths) {
+    assert.throws(
+      () => new SqliteAuthoritativeInvoiceStore(badPath),
+      (err: any) =>
+        err instanceof TypeError &&
+        /is prohibited for SqliteAuthoritativeInvoiceStore/.test(err.message),
+      `Expected path '${badPath}' to be rejected by SqliteAuthoritativeInvoiceStore`,
+    );
+  }
+});
+
+test("Pass 2.2 Finding P1-1: durable SqliteAuthoritativeInvoiceStore positively verifies file-backed DB via PRAGMA database_list", () => {
+  const { dir, dbPath } = createTempDbPath();
+  try {
+    const store = new SqliteAuthoritativeInvoiceStore(dbPath);
+    assert.equal(store.isDurable, true);
+
+    // Verify through the internal db that PRAGMA database_list has non-empty file matching dbPath
+    const list = (store as any).db.prepare("PRAGMA database_list;").all();
+    const mainRow = list.find((r: any) => r.name === "main");
+    assert.ok(mainRow);
+    assert.equal(typeof mainRow.file, "string");
+    assert.ok(mainRow.file.length > 0);
+    assert.equal(path.resolve(mainRow.file), path.resolve(dbPath));
+
+    store.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
 
 test("Pass 2.1 Finding 1: InMemorySqliteAuthoritativeInvoiceStore is explicitly volatile with isDurable: false", async () => {

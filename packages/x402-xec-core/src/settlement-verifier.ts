@@ -40,6 +40,8 @@ export interface VerifySettlementProofOptions {
   readonly addressToScript?: ((address: string) => string) | undefined;
 }
 
+export const TEMPORAL_FENCE_TOLERANCE_SECONDS = 10;
+
 export type SettlementVerificationErrorCode =
   | "MALFORMED_PROOF"
   | "INVOICE_NOT_FOUND"
@@ -50,6 +52,8 @@ export type SettlementVerificationErrorCode =
   | "INVOICE_NOT_YET_VALID"
   | "TX_NOT_FOUND"
   | "TRANSACTION_NOT_FINAL"
+  | "TRANSACTION_TIME_UNKNOWN"
+  | "HISTORICAL_TRANSACTION"
   | "PAY_TO_MISMATCH"
   | "AMOUNT_MISMATCH"
   | "TOKEN_OUTPUT_DISALLOWED"
@@ -280,6 +284,56 @@ export async function verifySettlementProof(
       httpStatus: 402,
       code: "TRANSACTION_NOT_FINAL",
       message: "Transaction is neither confirmed nor Avalanche-final",
+    };
+  }
+
+  // 8b. Validate Chronik timeFirstSeen field integrity
+  if (
+    tx.timeFirstSeen === null ||
+    (tx.timeFirstSeen !== undefined &&
+      (typeof tx.timeFirstSeen !== "number" ||
+        !Number.isSafeInteger(tx.timeFirstSeen) ||
+        tx.timeFirstSeen < 0))
+  ) {
+    return {
+      ok: false,
+      httpStatus: 502,
+      code: "MALFORMED_CHRONIK_TX",
+      message: "Chronik returned malformed timeFirstSeen field",
+    };
+  }
+
+  // 8c. Select temporal evidence in strict order:
+  // 1. PRIMARY: If tx.timeFirstSeen > 0, use timeFirstSeen regardless of whether
+  //    the tx is currently confirmed or still in mempool.
+  // 2. FALLBACK: If tx.timeFirstSeen === 0 AND tx.block is a structurally valid
+  //    confirmed block, use tx.block.timestamp.
+  // 3. NO TRUSTWORTHY TIME: If tx.timeFirstSeen === 0 AND there is no valid
+  //    confirmed block, fail closed with TRANSACTION_TIME_UNKNOWN (HTTP 502).
+  const timeFirstSeen = tx.timeFirstSeen ?? 0;
+  let observedAt: number;
+
+  if (timeFirstSeen > 0) {
+    observedAt = timeFirstSeen;
+  } else if (validConfirmedBlock && tx.block !== undefined) {
+    observedAt = tx.block.timestamp;
+  } else {
+    return {
+      ok: false,
+      httpStatus: 502,
+      code: "TRANSACTION_TIME_UNKNOWN",
+      message:
+        "Transaction temporal evidence cannot be proven: timeFirstSeen is 0 and no confirmed block is available",
+    };
+  }
+
+  // 8d. Server-authoritative temporal fencing against invoice.issuedAt
+  if (observedAt < invoice.issuedAt - TEMPORAL_FENCE_TOLERANCE_SECONDS) {
+    return {
+      ok: false,
+      httpStatus: 402,
+      code: "HISTORICAL_TRANSACTION",
+      message: `Transaction temporal evidence (${observedAt}) is older than invoice issuance (${invoice.issuedAt}) beyond tolerance (${TEMPORAL_FENCE_TOLERANCE_SECONDS}s)`,
     };
   }
 

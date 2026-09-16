@@ -175,12 +175,25 @@ test("P1-1: accepts valid confirmed block even if isFinal is false", async () =>
   assert.equal(res.status, "UNLOCKED");
 });
 
-test("P1-1: accepts valid Avalanche isFinal: true even if block is undefined", async () => {
+test("P1-1: accepts valid Avalanche isFinal: true with timeFirstSeen even if block is undefined", async () => {
   const res = await runVerificationWithTx({
     txid: TXID_1,
     outputs: standardOutputs,
     isFinal: true,
+    timeFirstSeen: 1200,
   });
   assert.equal(res.ok, true);
   assert.equal(res.status, "UNLOCKED");
+});
+
+test("P1-3: unconfirmed Avalanche isFinal: true with timeFirstSeen = 0 fails closed with TRANSACTION_TIME_UNKNOWN", async () => {
+  const res = await runVerificationWithTx({
+    txid: TXID_1,
+    outputs: standardOutputs,
+    isFinal: true,
+    timeFirstSeen: 0,
+  });
+  assert.equal(res.ok, false);
+  assert.equal(res.code, "TRANSACTION_TIME_UNKNOWN");
+  assert.equal(res.httpStatus, 502);
 });

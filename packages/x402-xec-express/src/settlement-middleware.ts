@@ -51,6 +51,21 @@ export interface CreateX402SettlementMiddlewareConfig {
   readonly expirySeconds?: number | undefined;
   readonly now?: (() => number) | undefined;
   readonly addressToScript?: ((address: string) => string) | undefined;
+  /**
+   * Explicit opt-out intended ONLY for unit tests or local development.
+   * Unsafe behavior (such as non-durable stores or static payTo) may be enabled
+   * ONLY when BOTH of the following conditions are met:
+   * 1. allowInsecureDevelopmentMode === true
+   * 2. process.env.NODE_ENV === "test" OR process.env.NODE_ENV === "development"
+   *
+   * In all other environments (undefined, empty, "production", "staging", etc.),
+   * production-grade security is strictly enforced by default.
+   */
+  readonly allowInsecureDevelopmentMode?: boolean | undefined;
+  /**
+   * @deprecated Retained for backwards compatibility. Production-grade security
+   * is now enabled by default regardless of this flag. It cannot weaken security.
+   */
   readonly production?: boolean | undefined;
 }
 
@@ -158,11 +173,14 @@ function parseProofHeader(rawHeader: string): unknown {
 export function createX402SettlementMiddleware(
   config: CreateX402SettlementMiddlewareConfig,
 ): RequestHandler {
-  const isProduction =
-    process.env.NODE_ENV === "production" ||
-    config.production === true;
+  const env = process.env.NODE_ENV;
+  const isInsecureDevModeAllowed =
+    config.allowInsecureDevelopmentMode === true &&
+    (env === "test" || env === "development");
 
-  if (isProduction) {
+  const requireProductionGuards = !isInsecureDevModeAllowed;
+
+  if (requireProductionGuards) {
     if (!config.store.isDurable) {
       throw new TypeError(
         "Production real-funds middleware requires a durable authoritative store (isDurable: true). Process-local stores (InMemoryAuthoritativeInvoiceStore) are strictly rejected.",

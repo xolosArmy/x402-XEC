@@ -27,6 +27,8 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+process.env.NODE_ENV = "test";
+
 const PUBLIC_ORIGIN = "https://api.example.com";
 // Valid cashaddr for testing
 const PAY_TO = "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w";
@@ -94,6 +96,7 @@ class MockTxProvider implements TxProvider {
       isFinal: found.isFinal !== undefined ? found.isFinal : true,
       outputs: found.outputs,
       txid: found.txid,
+      timeFirstSeen: found.timeFirstSeen !== undefined ? found.timeFirstSeen : NOW_BASE,
       ...(found.block !== undefined ? { block: found.block } : {}),
     };
   }
@@ -115,6 +118,7 @@ function setupTestServer(options?: {
   const middleware = createX402SettlementMiddleware({
     publicOrigin: PUBLIC_ORIGIN,
     payTo: PAY_TO,
+    allowInsecureDevelopmentMode: true,
     routes: {
       "GET /protected": {
         amountSats: "1000",

@@ -31,6 +31,7 @@ export interface ChronikTransaction {
   readonly outputs: readonly ChronikTransactionOutput[];
   readonly block?: ChronikBlock;
   readonly isFinal: boolean;
+  readonly timeFirstSeen?: number;
 }
 
 /** Read-only transaction boundary. Implementations must not return `null`. */

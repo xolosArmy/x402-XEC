@@ -63,7 +63,10 @@ class MockTxProvider implements TxProvider {
   async getTx(txid: string): Promise<ChronikTransaction> {
     const found = this.txs.get(txid.toLowerCase());
     if (!found) throw new TxNotFoundError(txid);
-    return found;
+    return {
+      timeFirstSeen: Math.floor(Date.now() / 1000),
+      ...found,
+    };
   }
 }
 
@@ -444,72 +447,18 @@ test("P0: 7. watch-only allocator strictly rejects private keys and contains zer
   assert.throws(() => allocator.deriveAddress(-1), /Invalid non-hardened derivation index/);
 });
 
-test("P0 & P1-2: production middleware fails closed on non-durable store or static payTo", () => {
+test("Pass 2.2 Finding P1-2: Secure By Default reverses polarity", () => {
+  const origEnv = process.env.NODE_ENV;
   const allocator = createXpubPayToAllocator(TEST_XPUB);
   const txProvider = new MockTxProvider();
   const memStore = new InMemoryAuthoritativeInvoiceStore();
 
-  // Rejects in-memory store in production
-  assert.throws(
-    () =>
-      createX402SettlementMiddleware({
-        publicOrigin: PUBLIC_ORIGIN,
-        payToAllocator: allocator,
-        store: memStore,
-        txProvider,
-        production: true,
-        routes: { "GET /test": { amountSats: "100" } },
-      }),
-    /Production real-funds middleware requires a durable authoritative store/,
-  );
-
-  // Pass 2.1 Finding 1: Rejects volatile in-memory SQLite store in production
-  const volatileSqliteStore = new InMemorySqliteAuthoritativeInvoiceStore();
-  assert.throws(
-    () =>
-      createX402SettlementMiddleware({
-        publicOrigin: PUBLIC_ORIGIN,
-        payToAllocator: allocator,
-        store: volatileSqliteStore,
-        txProvider,
-        production: true,
-        routes: { "GET /test": { amountSats: "100" } },
-      }),
-    /Production real-funds middleware requires a durable authoritative store/,
-  );
-
-  // Rejects static payTo without allocator in production with a real durable file-backed store
   const { dir, dbPath } = createTempDb();
   try {
-    const sqliteStore = new SqliteAuthoritativeInvoiceStore(dbPath);
-    assert.throws(
-      () =>
-        createX402SettlementMiddleware({
-          publicOrigin: PUBLIC_ORIGIN,
-          payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
-          store: sqliteStore,
-          txProvider,
-          production: true,
-          routes: { "GET /test": { amountSats: "100" } },
-        }),
-      /Production real-funds middleware requires a watch-only payToAllocator/,
-    );
-    sqliteStore.close();
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
-  }
-});
+    const durableStore = new SqliteAuthoritativeInvoiceStore(dbPath);
 
-test("Pass 2.1 Finding 3: NODE_ENV=production cannot be downgraded by production=false", () => {
-  const origEnv = process.env.NODE_ENV;
-  process.env.NODE_ENV = "production";
-
-  try {
-    const allocator = createXpubPayToAllocator(TEST_XPUB);
-    const txProvider = new MockTxProvider();
-
-    // 1. NODE_ENV=production + production=false + InMemory store -> reject
-    const memStore = new InMemoryAuthoritativeInvoiceStore();
+    // 1. NODE_ENV unset + no explicit opt-out + InMemory store -> reject
+    delete process.env.NODE_ENV;
     assert.throws(
       () =>
         createX402SettlementMiddleware({
@@ -517,49 +466,214 @@ test("Pass 2.1 Finding 3: NODE_ENV=production cannot be downgraded by production
           payToAllocator: allocator,
           store: memStore,
           txProvider,
-          production: false, // Attempt to downgrade
           routes: { "GET /test": { amountSats: "100" } },
         }),
       /Production real-funds middleware requires a durable authoritative store/,
     );
 
-    // 2. NODE_ENV=production + production=false + volatile InMemorySqlite store -> reject
-    const volatileSqliteStore = new InMemorySqliteAuthoritativeInvoiceStore();
+    // 2. NODE_ENV unset + no explicit opt-out + static payTo -> reject
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+          store: durableStore,
+          txProvider,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a watch-only payToAllocator/,
+    );
+
+    // 3. NODE_ENV unset + production: false + InMemory store -> still reject (production: false cannot weaken)
     assert.throws(
       () =>
         createX402SettlementMiddleware({
           publicOrigin: PUBLIC_ORIGIN,
           payToAllocator: allocator,
-          store: volatileSqliteStore,
+          store: memStore,
           txProvider,
-          production: false, // Attempt to downgrade
+          production: false,
           routes: { "GET /test": { amountSats: "100" } },
         }),
       /Production real-funds middleware requires a durable authoritative store/,
     );
 
-    // 3. NODE_ENV=production + production=false + static payTo -> reject
-    const { dir, dbPath } = createTempDb();
-    try {
-      const sqliteStore = new SqliteAuthoritativeInvoiceStore(dbPath);
-      assert.throws(
-        () =>
-          createX402SettlementMiddleware({
-            publicOrigin: PUBLIC_ORIGIN,
-            payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
-            store: sqliteStore,
-            txProvider,
-            production: false, // Attempt to downgrade
-            routes: { "GET /test": { amountSats: "100" } },
-          }),
-        /Production real-funds middleware requires a watch-only payToAllocator/,
-      );
-      sqliteStore.close();
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
-    }
+    // 4. NODE_ENV production + opt-out true -> reject insecure configuration
+    process.env.NODE_ENV = "production";
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: memStore,
+          txProvider,
+          allowInsecureDevelopmentMode: true,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a durable authoritative store/,
+    );
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+          store: durableStore,
+          txProvider,
+          allowInsecureDevelopmentMode: true,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a watch-only payToAllocator/,
+    );
+
+    // 5. NODE_ENV staging + opt-out true -> reject insecure configuration
+    process.env.NODE_ENV = "staging";
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: memStore,
+          txProvider,
+          allowInsecureDevelopmentMode: true,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a durable authoritative store/,
+    );
+
+    // 6. NODE_ENV test + opt-out omitted -> still secure by default!
+    process.env.NODE_ENV = "test";
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: memStore,
+          txProvider,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a durable authoritative store/,
+    );
+
+    // 7. NODE_ENV test + explicit opt-out true -> test-only insecure configuration may initialize
+    assert.doesNotThrow(() =>
+      createX402SettlementMiddleware({
+        publicOrigin: PUBLIC_ORIGIN,
+        payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+        store: memStore,
+        txProvider,
+        allowInsecureDevelopmentMode: true,
+        routes: { "GET /test": { amountSats: "100" } },
+      }),
+    );
+
+    // 8. NODE_ENV development + explicit opt-out true -> local dev configuration may initialize
+    process.env.NODE_ENV = "development";
+    assert.doesNotThrow(() =>
+      createX402SettlementMiddleware({
+        publicOrigin: PUBLIC_ORIGIN,
+        payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+        store: memStore,
+        txProvider,
+        allowInsecureDevelopmentMode: true,
+        routes: { "GET /test": { amountSats: "100" } },
+      }),
+    );
+
+    // 9. NODE_ENV development + opt-out omitted -> still secure by default!
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: memStore,
+          txProvider,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a durable authoritative store/,
+    );
+
+    durableStore.close();
   } finally {
     process.env.NODE_ENV = origEnv;
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("Pass 2.2 Finding P1-3: End-to-end integration: historical tx on reused derivation child cannot settle fresh invoice", async () => {
+  const { dir, dbPath } = createTempDb();
+  try {
+    const allocator = createXpubPayToAllocator(TEST_XPUB);
+    const store = new SqliteAuthoritativeInvoiceStore(dbPath);
+    const txProvider = new MockTxProvider();
+
+    // Attacker possesses a transaction paying child address 0 from 2 hours ago
+    const child0Address = allocator.deriveAddress(0);
+    const child0Script = cashAddressToOutputScriptHex(child0Address);
+    const pastTxid = "88".repeat(32);
+    const pastTimestamp = Math.floor(Date.now() / 1000) - 7200; // 2 hours ago
+
+    txProvider.txs.set(pastTxid, {
+      txid: pastTxid,
+      outputs: [{ sats: 1000n, outputScript: child0Script }],
+      isFinal: true,
+      timeFirstSeen: pastTimestamp,
+    });
+
+    const app = express();
+    app.use(
+      createX402SettlementMiddleware({
+        publicOrigin: PUBLIC_ORIGIN,
+        payToAllocator: allocator,
+        store,
+        txProvider,
+        routes: {
+          "GET /resource": {
+            amountSats: "1000",
+          },
+        },
+      }),
+    );
+    let handlerExecuted = false;
+    app.get("/resource", (_req, res) => {
+      handlerExecuted = true;
+      res.json({ ok: true });
+    });
+
+    const server = await startApp(app);
+    try {
+      // Fresh invoice allocates child address 0
+      const res = await fetch(`${server.origin}/resource`);
+      const offer = await res.json();
+      assert.equal(offer.invoice.payTo, child0Address);
+
+      // Attacker attempts to settle the fresh invoice using their 2-hour-old transaction
+      const attackRes = await fetch(`${server.origin}/resource`, {
+        headers: {
+          [PAYMENT_PROOF_HEADER]: JSON.stringify({
+            x402Version: 1,
+            network: "xec:mainnet",
+            invoiceHash: offer.invoiceId,
+            txid: pastTxid,
+          }),
+        },
+      });
+
+      // Must be rejected by temporal fence
+      assert.equal(attackRes.status, 402);
+      const attackBody = await attackRes.json();
+      assert.equal(attackBody.error, "HISTORICAL_TRANSACTION");
+      assert.equal(handlerExecuted, false);
+
+      // Authoritative state must still be ISSUED
+      const record = await store.getByInvoiceHash(offer.invoiceId);
+      assert.equal(record?.state, "ISSUED");
+      assert.equal(record?.settledTxid ?? null, null);
+    } finally {
+      await server.close();
+      store.close();
+    }
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
   }
 });
 
