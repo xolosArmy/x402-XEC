@@ -27,6 +27,8 @@
  */
 
 import assert from "node:assert/strict";
+
+process.env.TONALLI_SIMULATION = "true";
 import path from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
