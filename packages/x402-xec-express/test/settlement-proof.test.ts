@@ -422,8 +422,8 @@ test("8. expired invoice -> no unlock", async () => {
       outputs: [{ sats: 1000n, outputScript: PAY_TO_SCRIPT }],
     });
 
-    // Advance clock past expiry (expirySeconds = 60)
-    fixture.setTime(NOW_BASE + 65);
+    // Exactly at expiry boundary (now === expiresAt) -> exclusive boundary rejected
+    fixture.setTime(offer.invoice.expiresAt);
 
     const proof = {
       x402Version: 1,

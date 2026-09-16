@@ -175,7 +175,7 @@ export async function verifySettlementProof(
   const isIdempotentRetry =
     invoice.state === "PAID" && invoice.settledTxid === proof.txid;
 
-  if (!isIdempotentRetry && invoice.state !== "PAID" && now > invoice.expiresAt) {
+  if (!isIdempotentRetry && invoice.state !== "PAID" && now >= invoice.expiresAt) {
     return {
       ok: false,
       httpStatus: 402,
