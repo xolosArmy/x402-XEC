@@ -11,4 +11,3 @@ export * from "./resource.js";
 export * from "./schemas.js";
 export * from "./settlement-verifier.js";
 export * from "./signatures.js";
-export * from "./sqlite-invoice-store.js";

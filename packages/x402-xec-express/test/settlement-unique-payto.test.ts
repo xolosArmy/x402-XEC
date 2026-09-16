@@ -14,13 +14,16 @@ import {
   cashAddressToOutputScriptHex,
   createXpubPayToAllocator,
   InMemoryAuthoritativeInvoiceStore,
-  SqliteAuthoritativeInvoiceStore,
   TxNotFoundError,
   X402_VERSION,
   type ChronikTransaction,
   type ChronikTransactionOutput,
   type TxProvider,
 } from "@x402-xec/core";
+import {
+  SqliteAuthoritativeInvoiceStore,
+  InMemorySqliteAuthoritativeInvoiceStore,
+} from "@x402-xec/core/sqlite";
 import express, { type Express } from "express";
 import {
   createX402SettlementMiddleware,
@@ -460,18 +463,103 @@ test("P0 & P1-2: production middleware fails closed on non-durable store or stat
     /Production real-funds middleware requires a durable authoritative store/,
   );
 
-  // Rejects static payTo without allocator in production
-  const sqliteStore = new SqliteAuthoritativeInvoiceStore(":memory:");
+  // Pass 2.1 Finding 1: Rejects volatile in-memory SQLite store in production
+  const volatileSqliteStore = new InMemorySqliteAuthoritativeInvoiceStore();
   assert.throws(
     () =>
       createX402SettlementMiddleware({
         publicOrigin: PUBLIC_ORIGIN,
-        payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
-        store: sqliteStore,
+        payToAllocator: allocator,
+        store: volatileSqliteStore,
         txProvider,
         production: true,
         routes: { "GET /test": { amountSats: "100" } },
       }),
-    /Production real-funds middleware requires a watch-only payToAllocator/,
+    /Production real-funds middleware requires a durable authoritative store/,
   );
+
+  // Rejects static payTo without allocator in production with a real durable file-backed store
+  const { dir, dbPath } = createTempDb();
+  try {
+    const sqliteStore = new SqliteAuthoritativeInvoiceStore(dbPath);
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+          store: sqliteStore,
+          txProvider,
+          production: true,
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a watch-only payToAllocator/,
+    );
+    sqliteStore.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
+
+test("Pass 2.1 Finding 3: NODE_ENV=production cannot be downgraded by production=false", () => {
+  const origEnv = process.env.NODE_ENV;
+  process.env.NODE_ENV = "production";
+
+  try {
+    const allocator = createXpubPayToAllocator(TEST_XPUB);
+    const txProvider = new MockTxProvider();
+
+    // 1. NODE_ENV=production + production=false + InMemory store -> reject
+    const memStore = new InMemoryAuthoritativeInvoiceStore();
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: memStore,
+          txProvider,
+          production: false, // Attempt to downgrade
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a durable authoritative store/,
+    );
+
+    // 2. NODE_ENV=production + production=false + volatile InMemorySqlite store -> reject
+    const volatileSqliteStore = new InMemorySqliteAuthoritativeInvoiceStore();
+    assert.throws(
+      () =>
+        createX402SettlementMiddleware({
+          publicOrigin: PUBLIC_ORIGIN,
+          payToAllocator: allocator,
+          store: volatileSqliteStore,
+          txProvider,
+          production: false, // Attempt to downgrade
+          routes: { "GET /test": { amountSats: "100" } },
+        }),
+      /Production real-funds middleware requires a durable authoritative store/,
+    );
+
+    // 3. NODE_ENV=production + production=false + static payTo -> reject
+    const { dir, dbPath } = createTempDb();
+    try {
+      const sqliteStore = new SqliteAuthoritativeInvoiceStore(dbPath);
+      assert.throws(
+        () =>
+          createX402SettlementMiddleware({
+            publicOrigin: PUBLIC_ORIGIN,
+            payTo: "ecash:qqg3zyg3zyg3zyg3zyg3zyg3zyg3zyg3zyquz9y96w",
+            store: sqliteStore,
+            txProvider,
+            production: false, // Attempt to downgrade
+            routes: { "GET /test": { amountSats: "100" } },
+          }),
+        /Production real-funds middleware requires a watch-only payToAllocator/,
+      );
+      sqliteStore.close();
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  } finally {
+    process.env.NODE_ENV = origEnv;
+  }
+});
+

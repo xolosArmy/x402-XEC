@@ -159,8 +159,8 @@ export function createX402SettlementMiddleware(
   config: CreateX402SettlementMiddlewareConfig,
 ): RequestHandler {
   const isProduction =
-    config.production === true ||
-    (config.production !== false && process.env.NODE_ENV === "production");
+    process.env.NODE_ENV === "production" ||
+    config.production === true;
 
   if (isProduction) {
     if (!config.store.isDurable) {

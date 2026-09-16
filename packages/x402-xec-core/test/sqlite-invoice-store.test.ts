@@ -15,8 +15,11 @@ import {
   createXpubPayToAllocator,
   InMemoryAuthoritativeInvoiceStore,
   InvoiceStoreError,
-  SqliteAuthoritativeInvoiceStore,
 } from "../src/index.js";
+import {
+  SqliteAuthoritativeInvoiceStore,
+  InMemorySqliteAuthoritativeInvoiceStore,
+} from "../src/sqlite-invoice-store.js";
 
 // Standard mainnet test xpub (BIP32 watch-only public key)
 const TEST_XPUB =
@@ -384,4 +387,60 @@ test("P1-2: 8. failed transaction rolls back atomically", async () => {
 test("P1-2: 9. InMemoryAuthoritativeInvoiceStore has isDurable: false", () => {
   const memStore = new InMemoryAuthoritativeInvoiceStore();
   assert.equal(memStore.isDurable, false);
+});
+
+test("Pass 2.1 Finding 1: durable SqliteAuthoritativeInvoiceStore constructor rejects missing or empty path", () => {
+  assert.throws(
+    () => new (SqliteAuthoritativeInvoiceStore as any)(),
+    /SqliteAuthoritativeInvoiceStore requires an explicit persistent filesystem path/,
+  );
+  assert.throws(
+    () => new SqliteAuthoritativeInvoiceStore(""),
+    /SqliteAuthoritativeInvoiceStore requires a non-empty persistent filesystem path/,
+  );
+  assert.throws(
+    () => new SqliteAuthoritativeInvoiceStore("   "),
+    /SqliteAuthoritativeInvoiceStore requires a non-empty persistent filesystem path/,
+  );
+});
+
+test("Pass 2.1 Finding 1: durable SqliteAuthoritativeInvoiceStore constructor strictly rejects :memory: and memory URIs", () => {
+  assert.throws(
+    () => new SqliteAuthoritativeInvoiceStore(":memory:"),
+    /Volatile in-memory SQLite database \(:memory:\) is prohibited for SqliteAuthoritativeInvoiceStore/,
+  );
+  assert.throws(
+    () => new SqliteAuthoritativeInvoiceStore("file::memory:"),
+    /Volatile in-memory SQLite database \(file::memory:\) is prohibited for SqliteAuthoritativeInvoiceStore/,
+  );
+  assert.throws(
+    () => new SqliteAuthoritativeInvoiceStore("file:test.db?mode=memory"),
+    /Volatile in-memory SQLite database \(file:test.db\?mode=memory\) is prohibited for SqliteAuthoritativeInvoiceStore/,
+  );
+  assert.throws(
+    () => new SqliteAuthoritativeInvoiceStore("file::memory:?cache=shared"),
+    /Volatile in-memory SQLite database \(file::memory:\?cache=shared\) is prohibited for SqliteAuthoritativeInvoiceStore/,
+  );
+});
+
+test("Pass 2.1 Finding 1: InMemorySqliteAuthoritativeInvoiceStore is explicitly volatile with isDurable: false", async () => {
+  const volatileStore = new InMemorySqliteAuthoritativeInvoiceStore();
+  assert.equal(volatileStore.isDurable, false);
+
+  const allocator = createXpubPayToAllocator(TEST_XPUB);
+  const result = await volatileStore.issueWithAllocation(
+    {
+      nonce: "volatile_sqlite_test_nonce_12345",
+      resourceHash: "88".repeat(32),
+      amountSats: 500n,
+      issuedAt: 1000,
+      expiresAt: 2000,
+    },
+    allocator,
+  );
+
+  assert.equal(result.record.state, "ISSUED");
+  const retrieved = await volatileStore.getByInvoiceHash(result.record.invoiceHash);
+  assert.notEqual(retrieved, null);
+  volatileStore.close();
 });

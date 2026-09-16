@@ -1,7 +1,11 @@
 /**
  * @file sqlite-invoice-store.ts
  *
- * ACID SQLite Reference Adapter for Server-Authoritative Invoice State (Gate C3B P1-2).
+ * ACID SQLite Reference Adapter for Server-Authoritative Invoice State (Gate C3B P1-2 & Pass 2.1).
+ *
+ * Runtime Requirement:
+ * This module requires Node >=22.13.0 (or Node >=22.5.0 with native `node:sqlite` DatabaseSync).
+ * Exposed via explicit subpath `@x402-xec/core/sqlite`.
  *
  * Persistence & Concurrency Guarantees:
  * - Backed by native `node:sqlite` (`DatabaseSync`).
@@ -17,7 +21,10 @@
  * Durability Scope:
  * - Single-host / single-filesystem durability: Safely shared across multiple local processes
  *   connecting to the same SQLite database file.
- * - NOT claimed for distributed / multi-host deployments without an external distributed store.
+ * - SqliteAuthoritativeInvoiceStore requires an explicit persistent filesystem path and sets `isDurable = true`.
+ * - In-memory SQLite databases (:memory:, memory URIs) are strictly prohibited for SqliteAuthoritativeInvoiceStore.
+ * - Explicit test-only in-memory SQLite store is provided via InMemorySqliteAuthoritativeInvoiceStore
+ *   which sets `isDurable = false` to guarantee production middleware will reject it.
  */
 
 import { DatabaseSync } from "node:sqlite";
@@ -55,21 +62,23 @@ interface InvoiceRow {
   derivation_index: number;
 }
 
-export class SqliteAuthoritativeInvoiceStore implements AuthoritativeInvoiceStore {
-  readonly isDurable = true;
-  private readonly db: DatabaseSync;
+/**
+ * Shared base implementation for SQLite-backed authoritative invoice stores.
+ */
+export abstract class BaseSqliteAuthoritativeInvoiceStore
+  implements AuthoritativeInvoiceStore
+{
+  abstract readonly isDurable: boolean;
+  protected readonly db: DatabaseSync;
+  readonly databasePath: string;
 
-  constructor(dbOrPath: DatabaseSync | string = ":memory:") {
-    if (typeof dbOrPath === "string") {
-      this.db = new DatabaseSync(dbOrPath);
-    } else {
-      this.db = dbOrPath;
-    }
-
+  constructor(db: DatabaseSync, databasePath: string) {
+    this.db = db;
+    this.databasePath = databasePath;
     this.initDatabase();
   }
 
-  private initDatabase(): void {
+  protected initDatabase(): void {
     this.db.exec(`
       PRAGMA journal_mode = WAL;
       PRAGMA busy_timeout = 5000;
@@ -96,7 +105,7 @@ export class SqliteAuthoritativeInvoiceStore implements AuthoritativeInvoiceStor
     `);
   }
 
-  private rowToRecord(row: InvoiceRow): AuthoritativeInvoiceRecord {
+  protected rowToRecord(row: InvoiceRow): AuthoritativeInvoiceRecord {
     return {
       invoiceHash: row.invoice_hash,
       nonce: row.nonce,
@@ -148,7 +157,10 @@ export class SqliteAuthoritativeInvoiceStore implements AuthoritativeInvoiceStor
       try {
         this.db.exec("ROLLBACK");
       } catch {}
-      if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+      if (
+        err instanceof Error &&
+        err.message.includes("UNIQUE constraint failed")
+      ) {
         if (err.message.includes("nonce")) {
           throw new InvoiceStoreError(
             "NONCE_ALREADY_USED",
@@ -251,7 +263,10 @@ export class SqliteAuthoritativeInvoiceStore implements AuthoritativeInvoiceStor
       try {
         this.db.exec("ROLLBACK");
       } catch {}
-      if (err instanceof Error && err.message.includes("UNIQUE constraint failed")) {
+      if (
+        err instanceof Error &&
+        err.message.includes("UNIQUE constraint failed")
+      ) {
         if (err.message.includes("nonce")) {
           throw new InvoiceStoreError(
             "NONCE_ALREADY_USED",
@@ -288,7 +303,9 @@ export class SqliteAuthoritativeInvoiceStore implements AuthoritativeInvoiceStor
     return row ? this.rowToRecord(row) : null;
   }
 
-  async getBySettledTxid(txid: string): Promise<AuthoritativeInvoiceRecord | null> {
+  async getBySettledTxid(
+    txid: string,
+  ): Promise<AuthoritativeInvoiceRecord | null> {
     const row = this.db
       .prepare("SELECT * FROM invoices WHERE settled_txid = ?")
       .get(txid.toLowerCase()) as InvoiceRow | undefined;
@@ -401,5 +418,54 @@ export class SqliteAuthoritativeInvoiceStore implements AuthoritativeInvoiceStor
     try {
       this.db.close();
     } catch {}
+  }
+}
+
+/**
+ * Production-grade durable SQLite authoritative invoice store.
+ * Requires an explicit persistent filesystem path.
+ * In-memory databases are strictly rejected to guarantee durability.
+ */
+export class SqliteAuthoritativeInvoiceStore extends BaseSqliteAuthoritativeInvoiceStore {
+  readonly isDurable = true;
+
+  constructor(databasePath: string) {
+    if (typeof databasePath !== "string") {
+      throw new TypeError(
+        "SqliteAuthoritativeInvoiceStore requires an explicit persistent filesystem path (string).",
+      );
+    }
+    const trimmed = databasePath.trim();
+    if (trimmed.length === 0) {
+      throw new TypeError(
+        "SqliteAuthoritativeInvoiceStore requires a non-empty persistent filesystem path.",
+      );
+    }
+    const lower = trimmed.toLowerCase();
+    if (
+      lower === ":memory:" ||
+      lower.startsWith("file::memory:") ||
+      lower.includes("mode=memory") ||
+      lower.includes(":memory:")
+    ) {
+      throw new TypeError(
+        `Volatile in-memory SQLite database (${trimmed}) is prohibited for SqliteAuthoritativeInvoiceStore. ` +
+          `Use InMemorySqliteAuthoritativeInvoiceStore for testing or provide a persistent file path.`,
+      );
+    }
+
+    super(new DatabaseSync(trimmed), trimmed);
+  }
+}
+
+/**
+ * Explicit test-only in-memory SQLite store adapter.
+ * Sets `readonly isDurable = false` so production middleware will fail closed if supplied.
+ */
+export class InMemorySqliteAuthoritativeInvoiceStore extends BaseSqliteAuthoritativeInvoiceStore {
+  readonly isDurable = false;
+
+  constructor() {
+    super(new DatabaseSync(":memory:"), ":memory:");
   }
 }
