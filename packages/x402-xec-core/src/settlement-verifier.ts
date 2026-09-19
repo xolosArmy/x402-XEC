@@ -50,6 +50,7 @@ export type SettlementVerificationErrorCode =
   | "VERSION_MISMATCH"
   | "INVOICE_EXPIRED"
   | "INVOICE_NOT_YET_VALID"
+  | "INVALID_SERVER_TIME"
   | "TX_NOT_FOUND"
   | "TRANSACTION_NOT_FINAL"
   | "TRANSACTION_TIME_UNKNOWN"
@@ -172,6 +173,14 @@ export async function verifySettlementProof(
 
   // 5. Validate temporal bounds
   const now = options.now ? options.now() : Math.floor(Date.now() / 1000);
+  if (typeof now !== "number" || !Number.isSafeInteger(now) || now < 0) {
+    return {
+      ok: false,
+      httpStatus: 500,
+      code: "INVALID_SERVER_TIME",
+      message: "Server clock returned an invalid Unix timestamp",
+    };
+  }
   if (now < invoice.issuedAt) {
     return {
       ok: false,
@@ -277,6 +286,21 @@ export async function verifySettlementProof(
     validConfirmedBlock = true;
   }
 
+  // 8b. Validate the required Chronik timeFirstSeen field before making any
+  // finality or temporal-evidence decision.
+  if (
+    typeof tx.timeFirstSeen !== "number" ||
+    !Number.isSafeInteger(tx.timeFirstSeen) ||
+    tx.timeFirstSeen < 0
+  ) {
+    return {
+      ok: false,
+      httpStatus: 502,
+      code: "MALFORMED_CHRONIK_TX",
+      message: "Chronik returned malformed timeFirstSeen field",
+    };
+  }
+
   const isAvalancheFinal = tx.isFinal === true;
   if (!validConfirmedBlock && !isAvalancheFinal) {
     return {
@@ -287,22 +311,6 @@ export async function verifySettlementProof(
     };
   }
 
-  // 8b. Validate Chronik timeFirstSeen field integrity
-  if (
-    tx.timeFirstSeen === null ||
-    (tx.timeFirstSeen !== undefined &&
-      (typeof tx.timeFirstSeen !== "number" ||
-        !Number.isSafeInteger(tx.timeFirstSeen) ||
-        tx.timeFirstSeen < 0))
-  ) {
-    return {
-      ok: false,
-      httpStatus: 502,
-      code: "MALFORMED_CHRONIK_TX",
-      message: "Chronik returned malformed timeFirstSeen field",
-    };
-  }
-
   // 8c. Select temporal evidence in strict order:
   // 1. PRIMARY: If tx.timeFirstSeen > 0, use timeFirstSeen regardless of whether
   //    the tx is currently confirmed or still in mempool.
@@ -310,7 +318,7 @@ export async function verifySettlementProof(
   //    confirmed block, use tx.block.timestamp.
   // 3. NO TRUSTWORTHY TIME: If tx.timeFirstSeen === 0 AND there is no valid
   //    confirmed block, fail closed with TRANSACTION_TIME_UNKNOWN (HTTP 502).
-  const timeFirstSeen = tx.timeFirstSeen ?? 0;
+  const timeFirstSeen = tx.timeFirstSeen;
   let observedAt: number;
 
   if (timeFirstSeen > 0) {

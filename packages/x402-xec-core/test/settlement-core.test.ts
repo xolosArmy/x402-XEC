@@ -155,6 +155,7 @@ test("verifySettlementProof rejects unconfirmed non-final transactions", async (
       },
     ],
     isFinal: false,
+    timeFirstSeen: 1_020,
   };
 
   const res = await verifySettlementProof({

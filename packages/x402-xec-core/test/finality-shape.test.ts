@@ -193,6 +193,7 @@ test("P1-1: unconfirmed transaction without isFinal: true returns TRANSACTION_NO
     outputs: standardOutputs,
     block: undefined,
     isFinal: false,
+    timeFirstSeen: 1_200,
   });
   assert.equal(res.ok, false);
   assert.equal(res.code, "TRANSACTION_NOT_FINAL");
@@ -205,6 +206,7 @@ test("P1-1: accepts valid confirmed block even if isFinal is false", async () =>
     outputs: standardOutputs,
     block: { height: 800_000, hash: VALID_HASH_64, timestamp: 1_700_000_000 },
     isFinal: false,
+    timeFirstSeen: 0,
   });
   assert.equal(res.ok, true);
   assert.equal(res.status, "UNLOCKED");

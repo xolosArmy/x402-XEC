@@ -16,7 +16,7 @@ type ChronikClientOutput =
   & Pick<TxOutput, "outputScript" | "sats">
   & { readonly token?: ChronikClientToken };
 type ChronikClientTx =
-  & Pick<Tx, "isFinal" | "txid">
+  & Pick<Tx, "isFinal" | "timeFirstSeen" | "txid">
   & {
     readonly block?: Pick<BlockMetadata, "hash" | "height" | "timestamp">;
     readonly outputs: readonly ChronikClientOutput[];
@@ -79,6 +79,7 @@ export class RealChronikTxProvider implements ChronikTxProvider {
         },
       }),
       isFinal: transaction.isFinal,
+      timeFirstSeen: transaction.timeFirstSeen,
     };
   }
 }

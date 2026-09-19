@@ -101,6 +101,7 @@ function createFixtureFacilitator(): Facilitator {
         timestamp: DEMO_NOW - 100,
       },
       isFinal: true,
+      timeFirstSeen: DEMO_NOW - 100,
     }]),
     ledger: new InMemoryTransactionalLedger(),
     signatureVerifier: new TestOnlyMockSignatureVerifier(),

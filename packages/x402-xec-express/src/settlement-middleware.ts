@@ -31,6 +31,7 @@ import type { NextFunction, Request, RequestHandler, Response } from "express";
 
 export const PAYMENT_PROOF_HEADER = "payment-proof";
 export const SETTLEMENT_PROOF_HEADER = "settlement-proof";
+const X402_SETTLEMENT_PROOF_HEADER = "x402-settlement-proof";
 export const DEFAULT_EXPIRY_SECONDS = 60;
 
 export interface SettlementRouteConfig {
@@ -84,13 +85,20 @@ interface ProtectedRoute {
   readonly description?: string | undefined;
 }
 
+/** Canonicalizes only the pathname used to decide whether a route is protected. */
+function canonicalProtectedRoutePath(path: string): string {
+  const validated = validatePath(path);
+  if (validated === "/") return validated;
+  return validated.replace(/\/+$/, "").toLowerCase();
+}
+
 function parseRoutes(input: Record<string, SettlementRouteConfig>): Map<string, ProtectedRoute> {
   const routes = new Map<string, ProtectedRoute>();
   for (const [configuredKey, config] of Object.entries(input)) {
     const match = /^(\S+)\s+(\S+)$/.exec(configuredKey);
     if (!match) throw new TypeError(`invalid route key: ${configuredKey}`);
     const method = normalizeMethod(match[1] ?? "");
-    const path = validatePath(match[2] ?? "");
+    const path = canonicalProtectedRoutePath(match[2] ?? "");
     parseAmountSats(config.amountSats); // validates amount format
     const key = `${method} ${path}`;
     if (routes.has(key)) throw new TypeError(`duplicate route: ${key}`);
@@ -142,7 +150,7 @@ function resourceForRequest(request: Request, serverOrigin: string): ResourceReq
   return {
     serverOrigin,
     method: normalizeMethod(request.method),
-    path: validatePath(request.path),
+    path: validatePath(url.pathname),
     ...(query.length === 0 ? {} : { query }),
     ...(body === undefined ? {} : { body }),
   };
@@ -153,13 +161,31 @@ function parseProofHeader(rawHeader: string): unknown {
   if (trimmed.startsWith("{")) {
     return JSON.parse(trimmed);
   }
-  try {
-    const decoded = Buffer.from(trimmed, "base64url").toString("utf8");
-    return JSON.parse(decoded);
-  } catch {
-    const decoded = Buffer.from(trimmed, "base64").toString("utf8");
-    return JSON.parse(decoded);
+
+  // Canonical base64url is unpadded. Exact round-tripping prevents Node's
+  // permissive decoder from ignoring punctuation or accepting aliases.
+  if (/^[A-Za-z0-9_-]+$/.test(rawHeader) && rawHeader.length % 4 !== 1) {
+    const decoded = Buffer.from(rawHeader, "base64url");
+    if (decoded.toString("base64url") !== rawHeader) {
+      throw new TypeError("non-canonical base64url proof");
+    }
+    return JSON.parse(decoded.toString("utf8"));
   }
+
+  // Standard base64 compatibility is retained, with RFC-style padding and
+  // exact canonical round-tripping required.
+  if (
+    /^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(rawHeader) &&
+    rawHeader.length > 0
+  ) {
+    const decoded = Buffer.from(rawHeader, "base64");
+    if (decoded.toString("base64") !== rawHeader) {
+      throw new TypeError("non-canonical base64 proof");
+    }
+    return JSON.parse(decoded.toString("utf8"));
+  }
+
+  throw new TypeError("proof must be raw JSON, canonical base64url, or canonical base64");
 }
 
 /**
@@ -215,7 +241,7 @@ export function createX402SettlementMiddleware(
 
   return async (request: Request, response: Response, next: NextFunction): Promise<void> => {
     const method = normalizeMethod(request.method);
-    const path = validatePath(request.path);
+    const path = canonicalProtectedRoutePath(request.path);
     const key = `${method} ${path}`;
     const route = routes.get(key);
 
@@ -226,13 +252,26 @@ export function createX402SettlementMiddleware(
 
     const resource = resourceForRequest(request, publicOrigin);
 
-    const rawHeader =
-      request.get(PAYMENT_PROOF_HEADER) ??
-      request.get(SETTLEMENT_PROOF_HEADER) ??
-      request.get("x402-settlement-proof");
+    const proofHeaders = [
+      PAYMENT_PROOF_HEADER,
+      SETTLEMENT_PROOF_HEADER,
+      X402_SETTLEMENT_PROOF_HEADER,
+    ]
+      .map((name) => ({ name, value: request.get(name) }))
+      .filter((header): header is { name: string; value: string } => header.value !== undefined);
+
+    if (proofHeaders.length > 1) {
+      response.status(400).json({
+        error: "MALFORMED_PROOF",
+        message: "Multiple proof header aliases are ambiguous",
+      });
+      return;
+    }
+
+    const rawHeader = proofHeaders[0]?.value;
 
     // 1. Missing proof: issue authoritative invoice and respond 402
-    if (!rawHeader) {
+    if (rawHeader === undefined) {
       const issuedAt = now();
       const expiresAt = issuedAt + expirySeconds;
       const nonce = randomBytes(24).toString("base64url");
