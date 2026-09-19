@@ -243,7 +243,8 @@ export function createX402SettlementMiddleware(
     const method = normalizeMethod(request.method);
     const path = canonicalProtectedRoutePath(request.path);
     const key = `${method} ${path}`;
-    const route = routes.get(key);
+    const route = routes.get(key) ??
+      (method === "HEAD" ? routes.get(`GET ${path}`) : undefined);
 
     if (!route) {
       next();
