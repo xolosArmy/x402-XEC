@@ -28,6 +28,11 @@ import {
 } from "@x402-xec/core";
 import { randomBytes } from "node:crypto";
 import type { NextFunction, Request, RequestHandler, Response } from "express";
+import {
+  encodePaymentOfferHeader,
+  X402_PAYMENT_OFFER_HEADER,
+  type X402PaymentOffer,
+} from "./payment-offer-header.js";
 
 export const PAYMENT_PROOF_HEADER = "payment-proof";
 export const SETTLEMENT_PROOF_HEADER = "settlement-proof";
@@ -324,23 +329,43 @@ export function createX402SettlementMiddleware(
         });
       }
 
-      response.setHeader("payment-required", "true");
-      response.status(402).json({
+      const accepts: X402PaymentOffer["accepts"] = [
+        {
+          asset: "XEC",
+          network: XEC_MAINNET,
+          scheme: "exact",
+          amountSats: invoice.amountSats,
+          payTo: invoice.payTo,
+          proofHeader: PAYMENT_PROOF_HEADER,
+          ...(route.description ? { description: route.description } : {}),
+        },
+      ];
+      const paymentOffer: X402PaymentOffer = {
         x402Version: X402_VERSION,
         invoiceId: invoiceHash,
         invoice,
+        accepts,
+      };
+
+      let encodedPaymentOffer: string;
+      try {
+        encodedPaymentOffer = encodePaymentOfferHeader(paymentOffer);
+      } catch {
+        response.status(500).json({
+          error: "PAYMENT_OFFER_ENCODING_FAILED",
+          message: "Server could not emit a bounded canonical payment offer",
+        });
+        return;
+      }
+
+      response.setHeader("payment-required", "true");
+      response.setHeader(X402_PAYMENT_OFFER_HEADER, encodedPaymentOffer);
+      response.status(402).json({
+        x402Version: paymentOffer.x402Version,
+        invoiceId: paymentOffer.invoiceId,
+        invoice: paymentOffer.invoice,
         resource,
-        accepts: [
-          {
-            asset: "XEC",
-            network: XEC_MAINNET,
-            scheme: "exact",
-            amountSats: invoice.amountSats,
-            payTo: invoice.payTo,
-            proofHeader: PAYMENT_PROOF_HEADER,
-            ...(route.description ? { description: route.description } : {}),
-          },
-        ],
+        accepts: paymentOffer.accepts,
       });
       return;
     }
