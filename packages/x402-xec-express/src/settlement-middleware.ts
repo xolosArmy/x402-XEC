@@ -161,6 +161,48 @@ function resourceForRequest(request: Request, serverOrigin: string): ResourceReq
   };
 }
 
+function headerValues(request: Request, name: string): readonly string[] | undefined {
+  const value: string | string[] | undefined = request.headers[name];
+  if (value === undefined) return undefined;
+  return Array.isArray(value) ? value : [value];
+}
+
+/**
+ * Detects HTTP framing that indicates a body without consuming the request stream.
+ * Only one canonical Content-Length value of exactly "0" is bodyless. Any other
+ * Content-Length form is positive, malformed, or ambiguous and therefore fails
+ * closed. Transfer-Encoding coding names are case-insensitive and comma-separated;
+ * because every non-empty coding frames a body, and malformed/empty forms are
+ * ambiguous, any present Transfer-Encoding header fails closed as body-present.
+ */
+function requestIndicatesBody(request: Request): boolean {
+  const contentLengths = headerValues(request, "content-length");
+  if (contentLengths !== undefined) {
+    if (contentLengths.length !== 1) return true;
+    const contentLength = contentLengths[0]!;
+    if (contentLength === "0") {
+      // Continue: Transfer-Encoding, if also present, still indicates a body.
+    } else if (/^[1-9][0-9]*$/.test(contentLength)) {
+      return BigInt(contentLength) > 0n;
+    } else {
+      return true;
+    }
+  }
+
+  const transferEncodings = headerValues(request, "transfer-encoding");
+  if (transferEncodings === undefined) return false;
+
+  // Parse all comma-separated coding tokens with case-insensitive semantics.
+  // No recognized-coding allowlist is used: unfamiliar and malformed values
+  // remain body-indicating at this security boundary.
+  for (const value of transferEncodings) {
+    for (const coding of value.split(",")) {
+      if (coding.trim().toLowerCase().length > 0) return true;
+    }
+  }
+  return true; // Present but empty/malformed is ambiguous, so fail closed.
+}
+
 function parseProofHeader(rawHeader: string): unknown {
   const trimmed = rawHeader.trim();
   if (trimmed.startsWith("{")) {
@@ -253,6 +295,14 @@ export function createX402SettlementMiddleware(
 
     if (!route) {
       next();
+      return;
+    }
+
+    if (request.body === undefined && requestIndicatesBody(request)) {
+      response.status(500).json({
+        error: "UNPARSED_BODY_DETECTED",
+        message: "Protected request body must be parsed before x402 settlement middleware",
+      });
       return;
     }
 
