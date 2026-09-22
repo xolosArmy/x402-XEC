@@ -298,6 +298,16 @@ export function createX402SettlementMiddleware(
       return;
     }
 
+    // Express request.is() returns null for bodyless requests, so inspect the
+    // declared top-level media type even when Content-Length is zero.
+    if (/^multipart\//i.test(request.get("content-type")?.trimStart() ?? "")) {
+      response.status(415).json({
+        error: "UNSUPPORTED_MULTIPART_BODY",
+        message: "Protected multipart requests require explicit resource binding support",
+      });
+      return;
+    }
+
     if (request.body === undefined && requestIndicatesBody(request)) {
       response.status(500).json({
         error: "UNPARSED_BODY_DETECTED",
