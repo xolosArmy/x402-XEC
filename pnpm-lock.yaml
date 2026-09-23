@@ -137,6 +137,12 @@ importers:
 
   packages/x402-xec-core:
     dependencies:
+      '@scure/bip32':
+        specifier: ^1.7.0
+        version: 1.7.0
+      ecashaddrjs:
+        specifier: ^2.0.1
+        version: 2.0.1
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -655,6 +661,9 @@ packages:
 
   ecashaddrjs@2.0.0:
     resolution: {integrity: sha512-EvK1V4D3+nIEoD0ggy/b0F4lW39/72R9aOs/scm6kxMVuXu16btc+H74eQv7okNfXaQWKgolEekZkQ6wfcMMLw==}
+
+  ecashaddrjs@2.0.1:
+    resolution: {integrity: sha512-DYsejp4PTdGTutTqcejiRUWxZ0IOzmzadpG1xRE3q+mtBvxAoTn3da5TuSteUV5LYhU+izlFR09ufg3Gy+Hzog==}
 
   ee-first@1.1.1:
     resolution: {integrity: sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow==}
@@ -1666,6 +1675,8 @@ snapshots:
       ecashaddrjs: 2.0.0
 
   ecashaddrjs@2.0.0: {}
+
+  ecashaddrjs@2.0.1: {}
 
   ee-first@1.1.1: {}
 

@@ -35,6 +35,7 @@ test("real provider maps a mocked Chronik tx into the internal model", async () 
           timestamp: 1_700_000_000,
         },
         isFinal: true,
+        timeFirstSeen: 1_699_999_900,
       };
     },
   };
@@ -64,6 +65,7 @@ test("real provider maps a mocked Chronik tx into the internal model", async () 
       timestamp: 1_700_000_000,
     },
     isFinal: true,
+    timeFirstSeen: 1_699_999_900,
   });
 });
 

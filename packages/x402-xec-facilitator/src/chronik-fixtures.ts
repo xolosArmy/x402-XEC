@@ -27,6 +27,7 @@ const validTransaction: ChronikTransaction = {
   outputs: [{ sats: 2_000n, outputScript: FIXTURE_OUTPUT_SCRIPT }],
   block: confirmedBlock,
   isFinal: true,
+  timeFirstSeen: 1_700_000_000,
 };
 
 function fixture(
@@ -76,6 +77,7 @@ export const unfinalizedTransactionFixture = fixture([{
   txid: FIXTURE_TXID,
   outputs: validTransaction.outputs,
   isFinal: false,
+  timeFirstSeen: 1_700_000_000,
 }]);
 
 export const confirmedTransactionFixture = fixture([{
@@ -83,10 +85,12 @@ export const confirmedTransactionFixture = fixture([{
   outputs: validTransaction.outputs,
   block: confirmedBlock,
   isFinal: false,
+  timeFirstSeen: 0,
 }]);
 
 export const avalancheFinalTransactionFixture = fixture([{
   txid: FIXTURE_TXID,
   outputs: validTransaction.outputs,
   isFinal: true,
+  timeFirstSeen: 1_700_000_000,
 }]);

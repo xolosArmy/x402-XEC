@@ -27,7 +27,10 @@ export function validatePath(path: string): string {
   return path;
 }
 export function canonicalQuery(query: readonly QueryPair[] = []): readonly QueryPair[] {
-  return query.map(([k, v]) => [k, v] as const).sort(([ak, av], [bk, bv]) => ak === bk ? (av < bv ? -1 : av > bv ? 1 : 0) : (ak < bk ? -1 : 1));
+  return query
+    .map(([key, value], index) => ({ key, value, index }))
+    .sort((a, b) => a.key === b.key ? a.index - b.index : (a.key < b.key ? -1 : 1))
+    .map(({ key, value }) => [key, value] as const);
 }
 export function computeBodyAndQueryHash(request: ResourceRequest): string {
   return canonicalHash({ body: request.body ?? null, query: canonicalQuery(request.query) });

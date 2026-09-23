@@ -39,6 +39,7 @@ export async function startFacilitator(
     }],
     block: { height: 800_000, hash: "d".repeat(64), timestamp: DEMO_NOW - 100 },
     isFinal: true,
+    timeFirstSeen: DEMO_NOW - 100,
   }]);
   const facilitator = new Facilitator({
     txProvider,

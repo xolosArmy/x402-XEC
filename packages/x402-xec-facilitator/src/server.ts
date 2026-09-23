@@ -54,6 +54,7 @@ function parseFixtures(json: string): ChronikTransaction[] {
       })),
       ...(candidate.block === undefined ? {} : { block: candidate.block }),
       isFinal: candidate.isFinal,
+      timeFirstSeen: candidate.timeFirstSeen,
     };
   });
 }
@@ -75,6 +76,7 @@ interface Fixture {
   outputs: FixtureOutput[];
   block?: { height: number; hash: string; timestamp: number };
   isFinal: boolean;
+  timeFirstSeen: number;
 }
 
 function isFixture(value: unknown): value is Fixture {
@@ -84,7 +86,10 @@ function isFixture(value: unknown): value is Fixture {
     && Array.isArray(candidate.outputs)
     && candidate.outputs.every(isFixtureOutput)
     && (candidate.block === undefined || isFixtureBlock(candidate.block))
-    && typeof candidate.isFinal === "boolean";
+    && typeof candidate.isFinal === "boolean"
+    && typeof candidate.timeFirstSeen === "number"
+    && Number.isSafeInteger(candidate.timeFirstSeen)
+    && candidate.timeFirstSeen >= 0;
 }
 
 function isFixtureOutput(output: unknown): output is FixtureOutput {
